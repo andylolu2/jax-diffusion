@@ -1,0 +1,10 @@
+black==22.6.0
+flax==0.5.2
+jax==0.3.14
+jaxlib==0.3.14+cuda11.cudnn82
+jupyter==1.0.0
+ml-collections==0.1.1
+optax==0.1.2
+tensorflow==2.9.1
+tensorflow-datasets==4.6.0
+wandb==0.12.20
