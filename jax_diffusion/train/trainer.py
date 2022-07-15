@@ -1,15 +1,20 @@
 from collections import defaultdict
 from functools import partial
-from typing import Optional
+from typing import Optional, Sequence, Tuple
 
 import jax
 import jax.numpy as jnp
 import optax
+import wandb
+from absl import logging
 from flax.training import checkpoints
 from flax.training.train_state import TrainState
+from jax import random
 
+from jax_diffusion.diffusion import alpha_bars, alphas, betas
 from jax_diffusion.model import UNet
 from jax_diffusion.train import dataset
+from jax_diffusion.utils import image_grid
 
 
 class Trainer:
@@ -41,25 +46,38 @@ class Trainer:
         self._state, metrics = self._update_fn(self._state, inputs)
         return metrics
 
-    def evaluate(self):
+    def evaluate(self, rng: random.KeyArray):
         """Performs evaluation on the evaluation dataset"""
-        mean = defaultdict(int)
+        metrics = defaultdict(int)
 
+        sample = None
         for i, inputs in enumerate(self._build_eval_input()):
-            metrics = self._eval_fn(self._state, inputs)
+            sample = inputs
+            m = self._eval_fn(self._state, inputs)
 
-            for k, v in metrics.items():
-                mean[k] = (mean[k] * i + v) / (i + 1)
+            for k, v in m.items():
+                metrics[k] = (m[k] * i + v) / (i + 1)
 
-        return mean
+        assert sample is not None
+        shape = (self._config.eval.gen_samples,) + sample["x_t"].shape[1:]
+        generated = self._sample(self._state, shape=shape, rng=rng)
 
-    def _create_train_state(self, inputs: dataset.Batch, rng):
+        image = image_grid(generated)
+        metrics["sample"] = wandb.Image(image)
+
+        return metrics
+
+    def _create_train_state(self, inputs: dataset.Batch, rng: random.KeyArray):
         model = UNet(**self._config.model.unet_kwargs)
         params = model.init(rng, inputs["x_t"], inputs["t"])["params"]
         tx = self._create_optimizer()
+
+        count = sum(x.size for x in jax.tree_leaves(params)) / 1e6
+        print(f"Parameter count: {count:.2f}M")
+
         return TrainState.create(apply_fn=model.apply, params=params, tx=tx)
 
-    def _forward_fn(self, params, inputs: dataset.Batch):
+    def _forward_fn(self, params, inputs):
         assert self._state is not None
         return self._state.apply_fn({"params": params}, inputs["x_t"], inputs["t"])
 
@@ -89,6 +107,58 @@ class Trainer:
         metrics = self._compute_metrics(pred, inputs)
         return metrics
 
+    @partial(jax.jit, static_argnums=(0, 2))
+    def _sample(self, state: TrainState, shape: Sequence[int], rng: random.KeyArray):
+        """See Algorithm 2 in https://arxiv.org/pdf/2006.11239.pdf"""
+        T = self._config.diffusion.T
+        alpha = jnp.asarray(alphas(self._config.diffusion))
+        alpha_bar = jnp.asarray(alpha_bars(self._config.diffusion))
+        beta = jnp.asarray(betas(self._config.diffusion))
+
+        def body_fun(i: int, val: Tuple[random.KeyArray, jnp.ndarray]):
+            """
+            Args:
+                i (int): Iteration number
+                x (jnp.ndarray): Array of shape `[b, w, h, c]`
+            """
+            rng, x = val
+            rng, rng_next = jax.random.split(rng)
+
+            t = T - i - 1
+            z = jax.lax.cond(
+                pred=t > 0,
+                true_fun=lambda: jax.random.normal(rng, shape=shape, dtype=jnp.float32),
+                false_fun=lambda: jnp.zeros(shape=shape, dtype=jnp.float32),
+            )
+            alpha_t = alpha[t]
+            alpha_t_bar = alpha_bar[t]
+            sigma_t = beta[t] ** 0.5
+
+            t_input = jnp.full((x.shape[0], 1), t, dtype=jnp.float32)
+            eps = self._forward_fn(state.params, {"x_t": x, "t": t_input})
+
+            x = (1 / alpha_t**0.5) * (
+                x - ((1 - alpha_t) / (1 - alpha_t_bar) ** 0.5) * eps
+            ) + sigma_t * z
+
+            return rng_next, x
+
+        rng1, rng2 = jax.random.split(rng)
+        _, x = jax.lax.fori_loop(
+            lower=0,
+            upper=T,
+            body_fun=body_fun,
+            init_val=(
+                rng1,
+                jax.random.normal(
+                    rng2,
+                    shape=shape,
+                ),
+            ),
+        )
+
+        return x
+
     def _create_optimizer(self):
         return optax.adam(self._config.training.learning_rate)
 
@@ -103,7 +173,7 @@ class Trainer:
 
     def _build_train_input(self):
         return self._load_data(
-            split="train",
+            split=f"train[:{self._config.training.subset}]",
             is_training=True,
             batch_size=self._config.training.batch_size,
             seed=self._config.seed,
@@ -111,7 +181,7 @@ class Trainer:
 
     def _build_eval_input(self):
         return self._load_data(
-            split="test",
+            split=f"test[:{self._config.eval.subset}]",
             is_training=False,
             batch_size=self._config.eval.batch_size,
             seed=self._config.seed,

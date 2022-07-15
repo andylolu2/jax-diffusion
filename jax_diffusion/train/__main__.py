@@ -1,7 +1,9 @@
 from pathlib import Path
 
+import numpy as np
 import wandb
 from jax import random
+from tqdm import tqdm
 
 from jax_diffusion.config import get_config
 from jax_diffusion.train.trainer import Trainer
@@ -21,21 +23,37 @@ if __name__ == "__main__":
     )
     ckpt_dir = str(Path(config.ckpt_dir) / wandb.run.name)
 
-    trainer = Trainer(random.PRNGKey(config.seed), **config.experiment_kwargs)
+    [k0, k1, k2, k3] = random.split(random.PRNGKey(config.seed), num=4)
+    np.random.seed(config.seed)
+
+    trainer = Trainer(k0, **config.experiment_kwargs)
 
     if config.restore is not None:  # continue training from checkpoint
         trainer.restore_checkpoint(config.restore)
 
     periodic_actions = [
-        create_log_action(interval=config.log_interval),
-        create_checkpoint_action(
-            interval=config.ckpt_interval, trainer=trainer, ckpt_dir=ckpt_dir
+        create_log_action(
+            interval=config.log_interval,
+            rng=k1,
         ),
-        create_eval_action(interval=config.eval_interval, trainer=trainer),
+        create_checkpoint_action(
+            interval=config.ckpt_interval,
+            trainer=trainer,
+            ckpt_dir=ckpt_dir,
+            rng=k2,
+        ),
+        create_eval_action(
+            interval=config.eval_interval,
+            trainer=trainer,
+            rng=k3,
+        ),
     ]
 
-    while (step := trainer.global_step) < config.training_steps:  # type: ignore
-        metrics = trainer.step()
+    with tqdm(total=config.training_steps, initial=int(trainer.global_step)) as pbar:
+        while (step := trainer.global_step) < config.training_steps:  # type: ignore
+            metrics = trainer.step()
 
-        for pa in periodic_actions:
-            pa(step, metrics)
+            for pa in periodic_actions:
+                pa(step, metrics)
+
+            pbar.update()

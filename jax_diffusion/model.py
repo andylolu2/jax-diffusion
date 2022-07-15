@@ -2,7 +2,6 @@ from typing import Collection, Sequence
 
 import flax.linen as nn
 import jax.numpy as jnp
-from jax import random
 
 
 class UpSample(nn.Module):
@@ -78,14 +77,13 @@ class Block(nn.Module):
 
     @nn.compact
     def __call__(self, x, scale_shift=None):
-        x = nn.Conv(self.dim, kernel_size=(self.kernel_size, self.kernel_size))(x)
         x = nn.GroupNorm(self.num_groups)(x)
+        x = nn.silu(x)
+        x = nn.Conv(self.dim, kernel_size=(self.kernel_size, self.kernel_size))(x)
 
         if scale_shift is not None:
             scale, shift = scale_shift
             x = x * (1 + scale) + shift
-
-        x = nn.silu(x)
 
         return x
 
@@ -154,8 +152,9 @@ class UNet(nn.Module):
     kernel_size_init: int
     dim_mults: Sequence[int]
 
-    attention_dim_mults: Collection[int]
+    attention_resolutions: Collection[int]
     attention_num_heads: int
+    num_res_blocks: int
 
     sinusoidal_embed_dim: int
     time_embed_dim: int
@@ -171,26 +170,26 @@ class UNet(nn.Module):
 
         x = nn.Conv(self.dim_init, (self.kernel_size_init, self.kernel_size_init))(x)
 
-        hs = []
+        hs = [x]
 
         # downsample
         for i, dim_mult in enumerate(self.dim_mults):
             is_last = i == len(self.dim_mults) - 1
             dim = self.dim_init * dim_mult
 
-            x = ResnetBlock(dim, self.kernel_size, self.num_groups)(x, t)
-            x = ResnetBlock(dim, self.kernel_size, self.num_groups)(x, t)
+            for _ in range(self.num_res_blocks):
+                x = ResnetBlock(dim, self.kernel_size, self.num_groups)(x, t)
+                if x.shape[1] in self.attention_resolutions:
+                    # apply attention at certain levels of resolutions
+                    x = ResidualAttentionBlock(
+                        dim, self.attention_num_heads, self.num_groups
+                    )(x)
 
-            if dim_mult in self.attention_dim_mults:
-                # apply attention at certain levels of resolutions
-                x = ResidualAttentionBlock(
-                    dim, self.attention_num_heads, self.num_groups
-                )(x)
-
-            hs.append(x)
+                hs.append(x)
 
             if not is_last:
                 x = DownSample(dim, self.kernel_size)(x)
+                hs.append(x)
 
         # middle
         dim_mid = self.dim_init * self.dim_mults[-1]
@@ -205,31 +204,22 @@ class UNet(nn.Module):
             is_last = i == len(self.dim_mults) - 1
             dim = self.dim_init * dim_mult
 
-            # concatenate by last (channel) dimension
-            x = jnp.concatenate((x, hs.pop()), axis=-1)
-            x = ResnetBlock(dim, self.kernel_size, self.num_groups)(x, t)
-            x = ResnetBlock(dim, self.kernel_size, self.num_groups)(x, t)
-
-            if dim_mult in self.attention_dim_mults:
-                # apply attention at certain levels of resolutions
-                x = ResidualAttentionBlock(
-                    dim, self.attention_num_heads, self.num_groups
-                )(x)
+            for _ in range(self.num_res_blocks + 1):
+                # concatenate by last (channel) dimension
+                x = jnp.concatenate((x, hs.pop()), axis=-1)
+                x = ResnetBlock(dim, self.kernel_size, self.num_groups)(x, t)
+                if x.shape[1] in self.attention_resolutions:
+                    # apply attention at certain levels of resolutions
+                    x = ResidualAttentionBlock(
+                        dim, self.attention_num_heads, self.num_groups
+                    )(x)
 
             if not is_last:
                 x = UpSample(dim, self.kernel_size)(x)
+
+        assert not hs
 
         # final
         x = ResnetBlock(self.dim_init, self.kernel_size, self.num_groups)(x)
         x = nn.Conv(channels, kernel_size=(1, 1))(x)
         return x
-
-
-if __name__ == "__main__":
-    embed = SinusoidalPosEmbedding(dim=30)
-    ts = jnp.arange(5)[:, None]
-
-    params = embed.init(random.PRNGKey(0), ts)
-    pos = embed.apply(params, ts)
-    print(ts)
-    print(pos)

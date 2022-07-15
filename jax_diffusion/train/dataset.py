@@ -4,6 +4,8 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
+from jax_diffusion.diffusion import alpha_bars
+
 MEAN = 33.31
 STD_DEV = 77.24
 
@@ -29,11 +31,6 @@ def load(
     diffusion_config,
 ) -> Dataset:
     T = diffusion_config.T
-    beta_1 = diffusion_config.beta_1
-    beta_T = diffusion_config.beta_T
-
-    betas = tf.linspace(beta_1, beta_T, T)
-    alphas = 1 - betas
 
     ds = _load_tfds(
         split,
@@ -47,7 +44,7 @@ def load(
     def _diffusion_process(sample):
         """See Algorithm 1 in https://arxiv.org/pdf/2006.11239.pdf"""
         t = tf.random.uniform(shape=(), minval=0, maxval=T, dtype=tf.int32, seed=seed)
-        alpha_t_bar = tf.math.reduce_prod(alphas[:t])
+        alpha_t_bar = tf.convert_to_tensor(alpha_bars(diffusion_config))[t]
 
         x_0 = sample["image"]
         eps = tf.random.normal(x_0.shape, seed=seed)
