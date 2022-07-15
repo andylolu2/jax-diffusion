@@ -1,8 +1,9 @@
-from typing import Generator, Optional, TypedDict
+from typing import Generator, Optional
 
 import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
+from typing_extensions import TypedDict
 
 from jax_diffusion.diffusion import alpha_bars
 

@@ -32,7 +32,7 @@ class Trainer:
     def global_step(self) -> int:
         if self._state is None:
             return 0
-        return self._state.step
+        return int(self._state.step)
 
     def step(self):
         """Performs one training step"""

@@ -1,3 +1,4 @@
+from itertools import count
 from pathlib import Path
 
 import numpy as np
@@ -49,8 +50,8 @@ if __name__ == "__main__":
         ),
     ]
 
-    with tqdm(total=config.training_steps, initial=int(trainer.global_step)) as pbar:
-        while (step := trainer.global_step) < config.training_steps:  # type: ignore
+    with tqdm(total=config.training_steps, initial=trainer.global_step) as pbar:
+        for step in range(trainer.global_step, config.training_steps):
             metrics = trainer.step()
 
             for pa in periodic_actions:

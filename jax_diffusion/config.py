@@ -8,8 +8,8 @@ def get_config() -> ConfigDict:
 
     config.project_name = "jax-diffusion"
 
-    config.restore = str(Path.cwd() / "checkpoints/hopeful-lion-53")
-    # config.restore = None
+    # config.restore = str(Path.cwd() / "checkpoints/hopeful-lion-53")
+    config.restore = None
 
     config.seed = 42
     config.training_steps = 2000
