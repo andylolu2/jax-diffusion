@@ -1,7 +1,7 @@
-from itertools import count
 from pathlib import Path
 
 import numpy as np
+import tensorflow as tf
 import wandb
 from jax import random
 from tqdm import tqdm
@@ -15,6 +15,8 @@ from jax_diffusion.utils import (
 )
 
 if __name__ == "__main__":
+    tf.config.experimental.set_visible_devices([], "GPU")
+
     config = get_config()
 
     wandb.init(
