@@ -1,19 +1,19 @@
 from collections import defaultdict
 from functools import partial
+from pathlib import Path
 from typing import Optional, Sequence, Tuple
 
 import jax
 import jax.numpy as jnp
 import optax
 import wandb
-from absl import logging
 from flax.training import checkpoints
 from flax.training.train_state import TrainState
 from jax import random
 
 from jax_diffusion.diffusion import alpha_bars, alphas, betas
 from jax_diffusion.model import UNet
-from jax_diffusion.train import dataset
+from jax_diffusion.train import dataset, optimizers
 from jax_diffusion.utils import image_grid
 
 
@@ -24,6 +24,7 @@ class Trainer:
 
         # Trainer state
         self._state: Optional[TrainState] = None
+        self._lr_schedule: Optional[optax.Schedule] = None
 
         # Input pipelines.
         self._train_input: Optional[dataset.Dataset] = None
@@ -44,6 +45,10 @@ class Trainer:
 
         inputs = next(self._train_input)
         self._state, metrics = self._update_fn(self._state, inputs)
+
+        meta = self._metadata()
+        metrics.update(meta)
+
         return metrics
 
     def evaluate(self, rng: random.KeyArray):
@@ -70,7 +75,7 @@ class Trainer:
     def _create_train_state(self, inputs: dataset.Batch, rng: random.KeyArray):
         model = UNet(**self._config.model.unet_kwargs)
         params = model.init(rng, inputs["x_t"], inputs["t"])["params"]
-        tx = self._create_optimizer()
+        tx, self._lr_schedule = self._create_optimizer()
 
         count = sum(x.size for x in jax.tree_leaves(params)) / 1e6
         print(f"Parameter count: {count:.2f}M")
@@ -93,6 +98,11 @@ class Trainer:
     def _compute_metrics(self, pred, inputs: dataset.Batch):
         loss = self._loss(pred, inputs)
         return {"loss": loss}
+
+    def _metadata(self):
+        meta = {}
+        meta["learning_rate"] = self._lr_schedule(self.global_step)
+        return meta
 
     @partial(jax.jit, static_argnums=(0,))
     def _update_fn(self, state: TrainState, inputs: dataset.Batch):
@@ -160,7 +170,20 @@ class Trainer:
         return x
 
     def _create_optimizer(self):
-        return optax.adam(self._config.training.learning_rate)
+        op_config = self._config.training.optimizer
+        lr_config = op_config.lr_schedule
+
+        lr_schedule = optimizers.create_lr_schedule(
+            lr_config.schedule_type,
+            **lr_config.kwargs,
+        )
+        optimizer = optimizers.create_optimizer(
+            optimizer_type=op_config.optimizer_type,
+            lr_schedule=lr_schedule,
+            **op_config.kwargs,
+        )
+
+        return optimizer, lr_schedule
 
     def _initialize_train(self):
         assert self._train_input is None
@@ -206,12 +229,16 @@ class Trainer:
             ckpt_dir=ckpt_dir,
             target=self._state,
             step=self._state.step,
-            keep=2,
+            keep=1,
         )
 
     def restore_checkpoint(self, ckpt_dir: str):
+        assert Path(ckpt_dir).is_dir() or Path(ckpt_dir).is_file
+
         if self._state is None:
             self._initialize_train()
+
+        print(f"Restoring from {ckpt_dir}")
 
         self._state = checkpoints.restore_checkpoint(
             ckpt_dir=ckpt_dir,

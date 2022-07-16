@@ -20,6 +20,8 @@ class Batch(TypedDict):
 
 Dataset = Generator[Batch, None, None]
 
+AUTOTUNE = tf.data.experimental.AUTOTUNE
+
 
 def load(
     split,
@@ -59,9 +61,9 @@ def load(
 
         return {"eps": eps, "x_t": x_t, "t": t, "label": label}
 
-    ds = ds.map(_diffusion_process)
+    ds = ds.map(_diffusion_process, num_parallel_calls=AUTOTUNE)
     ds = ds.batch(batch_size, drop_remainder=True)
-    ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
+    ds = ds.prefetch(AUTOTUNE)
 
     yield from tfds.as_numpy(ds)
 
@@ -81,15 +83,15 @@ def _load_tfds(
 
     if is_training:
         assert seed is not None
-        ds = ds.repeat()
         ds = ds.shuffle(buffer_size=1000 * batch_size, seed=seed)
+        ds = ds.repeat()
 
     def _preprocess_sample(sample):
         image = _preprocess_image(sample["image"], resize_dim)
         label = tf.cast(sample["label"], tf.int32)
         return {"image": image, "label": label}
 
-    ds = ds.map(_preprocess_sample)
+    ds = ds.map(_preprocess_sample, num_parallel_calls=AUTOTUNE)
     return ds
 
 
