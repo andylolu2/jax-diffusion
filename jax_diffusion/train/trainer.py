@@ -121,7 +121,20 @@ class Trainer:
     def _sample(self, state: TrainState, shape: Sequence[int], rng: random.KeyArray):
         """See Algorithm 2 in https://arxiv.org/pdf/2006.11239.pdf"""
 
-        def body_fun(i: int, val: Tuple):
+        rng1, rng2 = jax.random.split(rng)
+        init_val = {
+            "x": jax.random.normal(rng1, shape=shape),
+            "rng": rng2,
+            "constants": (
+                self._config.diffusion.T,
+                state.params,
+                alphas(self._config.diffusion),
+                alpha_bars(self._config.diffusion),
+                betas(self._config.diffusion),
+            ),
+        }
+
+        def body_fun(i: int, val):
             """
             Args:
                 i (int): Iteration number
@@ -129,8 +142,8 @@ class Trainer:
                     x is of shape `[b, w, h, c]`.
                     constants is a tuple of (T, alphas, alpha_bars, betas).
             """
-            x, rng, constants = val
-            T, alpha, alpha_bar, beta = constants
+            x, rng, constants = val["x"], val["rng"], val["constants"]
+            T, params, alpha, alpha_bar, beta = constants
             t = T - i - 1
             alpha_t = alpha[t]
             alpha_t_bar = alpha_bar[t]
@@ -139,40 +152,25 @@ class Trainer:
 
             z = jax.lax.cond(
                 pred=t > 0,
-                true_fun=lambda: jax.random.normal(rng, shape=shape, dtype=jnp.float32),
-                false_fun=lambda: jnp.zeros(shape=shape, dtype=jnp.float32),
+                true_fun=lambda: jax.random.normal(rng, shape=x.shape, dtype=jnp.float32),
+                false_fun=lambda: jnp.zeros(shape=x.shape, dtype=jnp.float32),
             )
 
             t_input = jnp.full((x.shape[0], 1), t, dtype=jnp.float32)
-            eps = self._forward_fn(state.params, {"x_t": x, "t": t_input})
+            eps = self._forward_fn(params, {"x_t": x, "t": t_input})
 
             x = (1 / alpha_t**0.5) * (
                 x - ((1 - alpha_t) / (1 - alpha_t_bar) ** 0.5) * eps
             ) + sigma_t * z
 
-            return x, rng_next, constants
+            return {"x": x, "rng": rng_next, "constants": constants}
 
-        rng1, rng2 = jax.random.split(rng)
-        init_val = (
-            jax.random.normal(
-                rng2,
-                shape=shape,
-            ),
-            rng1,
-            (
-                self._config.diffusion.T,
-                alphas(self._config.diffusion),
-                alpha_bars(self._config.diffusion),
-                betas(self._config.diffusion),
-            ),
-        )
-
-        x, *_ = jax.lax.fori_loop(
+        x = jax.lax.fori_loop(
             lower=0,
             upper=self._config.diffusion.T,
             body_fun=body_fun,
             init_val=init_val,
-        )
+        )["x"]
 
         return x
 
