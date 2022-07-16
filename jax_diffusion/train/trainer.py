@@ -125,11 +125,11 @@ class Trainer:
             """
             Args:
                 i (int): Iteration number
-                val (Tuple): Tuple of (rng, x, constants).
+                val (Tuple): Tuple of (x, rng, constants).
                     x is of shape `[b, w, h, c]`.
                     constants is a tuple of (T, alphas, alpha_bars, betas).
             """
-            rng, x, constants = val
+            x, rng, constants = val
             T, alpha, alpha_bar, beta = constants
             t = T - i - 1
             alpha_t = alpha[t]
@@ -150,26 +150,28 @@ class Trainer:
                 x - ((1 - alpha_t) / (1 - alpha_t_bar) ** 0.5) * eps
             ) + sigma_t * z
 
-            return rng_next, x, constants
+            return x, rng_next, constants
 
         rng1, rng2 = jax.random.split(rng)
-        _, x = jax.lax.fori_loop(
+        init_val = (
+            jax.random.normal(
+                rng2,
+                shape=shape,
+            ),
+            rng1,
+            (
+                self._config.diffusion.T,
+                alphas(self._config.diffusion),
+                alpha_bars(self._config.diffusion),
+                betas(self._config.diffusion),
+            ),
+        )
+
+        x, *_ = jax.lax.fori_loop(
             lower=0,
             upper=self._config.diffusion.T,
             body_fun=body_fun,
-            init_val=(
-                rng1,
-                jax.random.normal(
-                    rng2,
-                    shape=shape,
-                ),
-                (
-                    self._config.diffusion.T,
-                    jnp.asarray(alphas(self._config.diffusion)),
-                    jnp.asarray(alpha_bars(self._config.diffusion)),
-                    jnp.asarray(betas(self._config.diffusion)),
-                ),
-            ),
+            init_val=init_val,
         )
 
         return x
