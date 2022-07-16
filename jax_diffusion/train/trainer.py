@@ -120,29 +120,28 @@ class Trainer:
     @partial(jax.jit, static_argnums=(0, 2))
     def _sample(self, state: TrainState, shape: Sequence[int], rng: random.KeyArray):
         """See Algorithm 2 in https://arxiv.org/pdf/2006.11239.pdf"""
-        T = self._config.diffusion.T
-        alpha = jnp.asarray(alphas(self._config.diffusion))
-        alpha_bar = jnp.asarray(alpha_bars(self._config.diffusion))
-        beta = jnp.asarray(betas(self._config.diffusion))
 
-        def body_fun(i: int, val: Tuple[random.KeyArray, jnp.ndarray]):
+        def body_fun(i: int, val: Tuple):
             """
             Args:
                 i (int): Iteration number
-                x (jnp.ndarray): Array of shape `[b, w, h, c]`
+                val (Tuple): Tuple of (rng, x, constants).
+                    x is of shape `[b, w, h, c]`.
+                    constants is a tuple of (T, alphas, alpha_bars, betas).
             """
-            rng, x = val
+            rng, x, constants = val
+            T, alpha, alpha_bar, beta = constants
+            t = T - i - 1
+            alpha_t = alpha[t]
+            alpha_t_bar = alpha_bar[t]
+            sigma_t = beta[t] ** 0.5
             rng, rng_next = jax.random.split(rng)
 
-            t = T - i - 1
             z = jax.lax.cond(
                 pred=t > 0,
                 true_fun=lambda: jax.random.normal(rng, shape=shape, dtype=jnp.float32),
                 false_fun=lambda: jnp.zeros(shape=shape, dtype=jnp.float32),
             )
-            alpha_t = alpha[t]
-            alpha_t_bar = alpha_bar[t]
-            sigma_t = beta[t] ** 0.5
 
             t_input = jnp.full((x.shape[0], 1), t, dtype=jnp.float32)
             eps = self._forward_fn(state.params, {"x_t": x, "t": t_input})
@@ -151,18 +150,24 @@ class Trainer:
                 x - ((1 - alpha_t) / (1 - alpha_t_bar) ** 0.5) * eps
             ) + sigma_t * z
 
-            return rng_next, x
+            return rng_next, x, constants
 
         rng1, rng2 = jax.random.split(rng)
         _, x = jax.lax.fori_loop(
             lower=0,
-            upper=T,
+            upper=self._config.diffusion.T,
             body_fun=body_fun,
             init_val=(
                 rng1,
                 jax.random.normal(
                     rng2,
                     shape=shape,
+                ),
+                (
+                    self._config.diffusion.T,
+                    jnp.asarray(alphas(self._config.diffusion)),
+                    jnp.asarray(alpha_bars(self._config.diffusion)),
+                    jnp.asarray(betas(self._config.diffusion)),
                 ),
             ),
         )
