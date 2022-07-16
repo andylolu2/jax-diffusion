@@ -117,7 +117,6 @@ class Trainer:
         metrics = self._compute_metrics(pred, inputs)
         return metrics
 
-    @partial(jax.jit, static_argnums=(0, 2))
     def _sample(self, state: TrainState, shape: Sequence[int], rng: random.KeyArray):
         """See Algorithm 2 in https://arxiv.org/pdf/2006.11239.pdf"""
 
@@ -152,7 +151,9 @@ class Trainer:
 
             z = jax.lax.cond(
                 pred=t > 0,
-                true_fun=lambda: jax.random.normal(rng, shape=x.shape, dtype=jnp.float32),
+                true_fun=lambda: jax.random.normal(
+                    rng, shape=x.shape, dtype=jnp.float32
+                ),
                 false_fun=lambda: jnp.zeros(shape=x.shape, dtype=jnp.float32),
             )
 
