@@ -1,10 +1,10 @@
-# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 
 .python-version
 
-_wandb/
-checkpoints/
-*.ipynb
+/jax_diffusion/notebooks
+/_wandb
+/checkpoints
+/out
