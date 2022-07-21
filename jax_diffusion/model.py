@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Collection, Sequence
 
 import flax.linen as nn
@@ -74,11 +75,13 @@ class Block(nn.Module):
     dim: int
     kernel_size: int
     num_groups: int
+    dropout: float
 
     @nn.compact
-    def __call__(self, x, scale_shift=None):
+    def __call__(self, x, deterministic: bool, *, scale_shift=None):
         x = nn.GroupNorm(self.num_groups)(x)
         x = nn.silu(x)
+        x = nn.Dropout(rate=self.dropout)(x, deterministic)
         x = nn.Conv(self.dim, kernel_size=(self.kernel_size, self.kernel_size))(x)
 
         if scale_shift is not None:
@@ -92,14 +95,15 @@ class ResnetBlock(nn.Module):
     dim: int
     kernel_size: int
     num_groups: int
+    dropout: float
 
     @nn.compact
-    def __call__(self, x, time_emb=None):
+    def __call__(self, x, deterministic: bool, *, time_emb=None):
         """
         Args:
             x: array of shape `[batch_size, width, height, d]`
         """
-        h = Block(self.dim, self.kernel_size, self.num_groups)(x)
+        h = Block(self.dim, self.kernel_size, self.num_groups, 0.0)(x, deterministic)
 
         scale_shift = None
         if time_emb is not None:
@@ -113,8 +117,8 @@ class ResnetBlock(nn.Module):
 
             scale_shift = (scale, shift)
 
-        h = Block(self.dim, self.kernel_size, self.num_groups)(
-            h, scale_shift=scale_shift
+        h = Block(self.dim, self.kernel_size, self.num_groups, self.dropout)(
+            h, deterministic, scale_shift=scale_shift
         )
 
         if x.shape[-1] != self.dim:
@@ -161,14 +165,22 @@ class UNet(nn.Module):
 
     kernel_size: int
     num_groups: int
+    dropout: float
 
     @nn.compact
-    def __call__(self, x, time):
+    def __call__(self, x, time, train: bool):
         channels = x.shape[-1]
 
         t = TimeEmbedding(self.time_embed_dim, self.sinusoidal_embed_dim)(time)
 
         x = nn.Conv(self.dim_init, (self.kernel_size_init, self.kernel_size_init))(x)
+
+        make_res = partial(
+            ResnetBlock,
+            kernel_size=self.kernel_size,
+            num_groups=self.num_groups,
+            dropout=self.dropout,
+        )
 
         hs = [x]
 
@@ -178,7 +190,7 @@ class UNet(nn.Module):
             dim = self.dim_init * dim_mult
 
             for _ in range(self.num_res_blocks):
-                x = ResnetBlock(dim, self.kernel_size, self.num_groups)(x, t)
+                x = make_res(dim)(x, not train, time_emb=t)
                 if x.shape[1] in self.attention_resolutions:
                     # apply attention at certain levels of resolutions
                     x = ResidualAttentionBlock(
@@ -193,11 +205,11 @@ class UNet(nn.Module):
 
         # middle
         dim_mid = self.dim_init * self.dim_mults[-1]
-        x = ResnetBlock(dim_mid, self.kernel_size, self.num_groups)(x, t)
+        x = make_res(dim_mid)(x, not train, time_emb=t)
         x = ResidualAttentionBlock(dim_mid, self.attention_num_heads, self.num_groups)(
             x
         )
-        x = ResnetBlock(dim_mid, self.kernel_size, self.num_groups)(x, t)
+        x = make_res(dim_mid)(x, not train, time_emb=t)
 
         # upsample
         for i, dim_mult in enumerate(reversed(self.dim_mults)):
@@ -207,7 +219,7 @@ class UNet(nn.Module):
             for _ in range(self.num_res_blocks + 1):
                 # concatenate by last (channel) dimension
                 x = jnp.concatenate((x, hs.pop()), axis=-1)
-                x = ResnetBlock(dim, self.kernel_size, self.num_groups)(x, t)
+                x = make_res(dim)(x, not train, time_emb=t)
                 if x.shape[1] in self.attention_resolutions:
                     # apply attention at certain levels of resolutions
                     x = ResidualAttentionBlock(
@@ -220,6 +232,6 @@ class UNet(nn.Module):
         assert not hs
 
         # final
-        x = ResnetBlock(self.dim_init, self.kernel_size, self.num_groups)(x)
+        x = make_res(self.dim_init)(x, not train, time_emb=t)
         x = nn.Conv(channels, kernel_size=(1, 1))(x)
         return x
