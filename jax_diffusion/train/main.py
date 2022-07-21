@@ -22,7 +22,7 @@ def main():
     config = get_config()
 
     # setup rng
-    [k0, k1, k2, k3] = random.split(random.PRNGKey(config.seed), num=4)
+    k0, k1, k2, k3 = random.split(random.PRNGKey(config.seed), num=4)
     np.random.seed(config.seed)
 
     # setup trainer
