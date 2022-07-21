@@ -26,8 +26,18 @@ def _cosine_with_warmup(
     )
 
 
-def create_optimizer(optimizer_type: str, lr_schedule: optax.Schedule, **kwargs):
+def create_optimizer(
+    optimizer_type: str,
+    lr_schedule: optax.Schedule,
+    max_grad_norm: float,
+    **kwargs,
+):
+    optimizer = None
     if optimizer_type == "adam":
-        return optax.inject_hyperparams(optax.adam)(learning_rate=lr_schedule, **kwargs)
+        optimizer = optax.adam(learning_rate=lr_schedule, **kwargs)
     else:
         raise NotImplementedError(optimizer_type)
+    return optax.chain(
+        optimizer,
+        optax.clip_by_global_norm(max_grad_norm),
+    )
