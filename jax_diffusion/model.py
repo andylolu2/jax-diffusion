@@ -168,7 +168,7 @@ class UNet(nn.Module):
     dropout: float
 
     @nn.compact
-    def __call__(self, x, time, train: bool):
+    def __call__(self, x):
         channels = x.shape[-1]
 
         x = nn.Conv(self.dim_init, (self.kernel_size_init, self.kernel_size_init))(x)
@@ -180,26 +180,26 @@ class UNet(nn.Module):
         #     dropout=self.dropout,
         # )
 
-        hs = [x]
+        # hs = [x]
 
         # downsample
         for i, dim_mult in enumerate(self.dim_mults):
             is_last = i == len(self.dim_mults) - 1
             dim = self.dim_init * dim_mult
 
-            for _ in range(self.num_res_blocks):
-                # x = make_res(dim)(x, not train)
-                # if x.shape[1] in self.attention_resolutions:
-                #     # apply attention at certain levels of resolutions
-                #     x = ResidualAttentionBlock(
-                #         dim, self.attention_num_heads, self.num_groups
-                #     )(x)
+            # for _ in range(self.num_res_blocks):
+            # x = make_res(dim)(x, not train)
+            # if x.shape[1] in self.attention_resolutions:
+            #     # apply attention at certain levels of resolutions
+            #     x = ResidualAttentionBlock(
+            #         dim, self.attention_num_heads, self.num_groups
+            #     )(x)
 
-                hs.append(x)
+            # hs.append(x)
 
             if not is_last:
                 x = DownSample(dim, self.kernel_size)(x)
-                hs.append(x)
+                # hs.append(x)
 
         # middle
         # dim_mid = self.dim_init * self.dim_mults[-1]
@@ -214,21 +214,21 @@ class UNet(nn.Module):
             is_last = i == len(self.dim_mults) - 1
             dim = self.dim_init * dim_mult
 
-            for _ in range(self.num_res_blocks + 1):
-                # concatenate by last (channel) dimension
-                hs.pop()
-                # x = jnp.concatenate((x, hs.pop()), axis=-1)
-                # x = make_res(dim)(x, not train)
-                # if x.shape[1] in self.attention_resolutions:
-                #     # apply attention at certain levels of resolutions
-                #     x = ResidualAttentionBlock(
-                #         dim, self.attention_num_heads, self.num_groups
-                #     )(x)
+            # for _ in range(self.num_res_blocks + 1):
+            # concatenate by last (channel) dimension
+            # hs.pop()
+            # x = jnp.concatenate((x, hs.pop()), axis=-1)
+            # x = make_res(dim)(x, not train)
+            # if x.shape[1] in self.attention_resolutions:
+            #     # apply attention at certain levels of resolutions
+            #     x = ResidualAttentionBlock(
+            #         dim, self.attention_num_heads, self.num_groups
+            #     )(x)
 
             if not is_last:
                 x = UpSample(dim, self.kernel_size)(x)
 
-        assert not hs
+        # assert not hs
 
         # final
         # x = make_res(self.dim_init)(x, not train)
