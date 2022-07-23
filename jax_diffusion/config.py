@@ -12,7 +12,7 @@ def get_config() -> ConfigDict:
     config.restore = None
 
     d_model = 32
-    training_steps = 80000
+    training_steps = 30000
 
     config.seed = 42
     config.training_steps = training_steps
@@ -27,11 +27,11 @@ def get_config() -> ConfigDict:
                 seed=42,
                 dataset=dict(
                     name="fashion_mnist",
-                    resize_dim=64,
+                    resize_dim=32,
                     data_dir=str(Path.home() / "tensorflow_datasets"),
                 ),
                 training=dict(
-                    batch_size=32,
+                    batch_size=128,
                     subset="100%",
                     ema_step_size=1 - 0.9995,
                     optimizer=dict(
@@ -58,7 +58,7 @@ def get_config() -> ConfigDict:
                 ),
                 eval=dict(
                     batch_size=32,
-                    subset="10%",
+                    subset="20%",
                     gen_samples=4,
                 ),
                 diffusion=dict(
@@ -70,7 +70,7 @@ def get_config() -> ConfigDict:
                     unet_kwargs=dict(
                         dim_init=d_model,
                         kernel_size_init=3,
-                        dim_mults=(1, 1, 2, 4, 4),
+                        dim_mults=(1, 2, 2, 4),
                         attention_resolutions=(16,),
                         attention_num_heads=4,
                         num_res_blocks=2,
