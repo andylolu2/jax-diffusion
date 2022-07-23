@@ -202,12 +202,12 @@ class UNet(nn.Module):
                 hs.append(x)
 
         # middle
-        dim_mid = self.dim_init * self.dim_mults[-1]
-        x = make_res(dim_mid)(x, not train)
-        x = ResidualAttentionBlock(dim_mid, self.attention_num_heads, self.num_groups)(
-            x
-        )
-        x = make_res(dim_mid)(x, not train)
+        # dim_mid = self.dim_init * self.dim_mults[-1]
+        # x = make_res(dim_mid)(x, not train)
+        # x = ResidualAttentionBlock(dim_mid, self.attention_num_heads, self.num_groups)(
+        #     x
+        # )
+        # x = make_res(dim_mid)(x, not train)
 
         # upsample
         for i, dim_mult in enumerate(reversed(self.dim_mults)):
