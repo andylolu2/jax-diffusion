@@ -169,6 +169,23 @@ class Trainer:
         metrics = self._compute_metrics(pred, inputs)
         return metrics
 
+    @partial(jax.jit, static_argnums=(0,))
+    def denoise(self, x, t):
+        diff_conf = self._config.diffusion
+        alpha_t = jnp.asarray(alphas(diff_conf))[t]
+        alpha_t_bar = jnp.asarray(alpha_bars(diff_conf))[t]
+
+        t_input = jnp.full((x.shape[0], 1), t, dtype=jnp.float32)
+        eps = self._forward_fn(
+            self._state.ema_params, {"x_t": x, "t": t_input}, train=False
+        )
+
+        x_new = (1 / alpha_t**0.5) * (
+            x - ((1 - alpha_t) / (1 - alpha_t_bar) ** 0.5) * eps
+        )
+
+        return x_new
+
     def _sample(self, state: TrainState, shape: Sequence[int], rng: random.KeyArray):
         """See Algorithm 2 in https://arxiv.org/pdf/2006.11239.pdf"""
 
