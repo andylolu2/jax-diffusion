@@ -173,12 +173,12 @@ class UNet(nn.Module):
 
         x = nn.Conv(self.dim_init, (self.kernel_size_init, self.kernel_size_init))(x)
 
-        make_res = partial(
-            ResnetBlock,
-            kernel_size=self.kernel_size,
-            num_groups=self.num_groups,
-            dropout=self.dropout,
-        )
+        # make_res = partial(
+        #     ResnetBlock,
+        #     kernel_size=self.kernel_size,
+        #     num_groups=self.num_groups,
+        #     dropout=self.dropout,
+        # )
 
         hs = [x]
 
@@ -231,6 +231,6 @@ class UNet(nn.Module):
         assert not hs
 
         # final
-        x = make_res(self.dim_init)(x, not train)
+        # x = make_res(self.dim_init)(x, not train)
         x = nn.Conv(channels, kernel_size=(1, 1))(x)
         return x
