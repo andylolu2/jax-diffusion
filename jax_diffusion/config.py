@@ -70,7 +70,7 @@ def get_config() -> ConfigDict:
                     unet_kwargs=dict(
                         dim_init=d_model,
                         kernel_size_init=3,
-                        dim_mults=(1, 1, 2, 4, 4),
+                        dim_mults=(1, 2),
                         attention_resolutions=(16,),
                         attention_num_heads=4,
                         num_res_blocks=2,
