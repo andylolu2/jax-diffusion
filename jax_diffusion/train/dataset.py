@@ -86,7 +86,7 @@ def load(
 
     ds = ds.map(_diffusion_process)
     ds = ds.batch(batch_size, drop_remainder=True)
-    ds = ds.prefetch(20)
+    ds = ds.prefetch(3)
 
     yield from tfds.as_numpy(ds)
 
