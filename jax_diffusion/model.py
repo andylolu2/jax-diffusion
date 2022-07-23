@@ -188,12 +188,12 @@ class UNet(nn.Module):
             dim = self.dim_init * dim_mult
 
             for _ in range(self.num_res_blocks):
-                x = make_res(dim)(x, not train)
-                if x.shape[1] in self.attention_resolutions:
-                    # apply attention at certain levels of resolutions
-                    x = ResidualAttentionBlock(
-                        dim, self.attention_num_heads, self.num_groups
-                    )(x)
+                # x = make_res(dim)(x, not train)
+                # if x.shape[1] in self.attention_resolutions:
+                #     # apply attention at certain levels of resolutions
+                #     x = ResidualAttentionBlock(
+                #         dim, self.attention_num_heads, self.num_groups
+                #     )(x)
 
                 hs.append(x)
 
@@ -216,13 +216,14 @@ class UNet(nn.Module):
 
             for _ in range(self.num_res_blocks + 1):
                 # concatenate by last (channel) dimension
-                x = jnp.concatenate((x, hs.pop()), axis=-1)
-                x = make_res(dim)(x, not train)
-                if x.shape[1] in self.attention_resolutions:
-                    # apply attention at certain levels of resolutions
-                    x = ResidualAttentionBlock(
-                        dim, self.attention_num_heads, self.num_groups
-                    )(x)
+                hs.pop()
+                # x = jnp.concatenate((x, hs.pop()), axis=-1)
+                # x = make_res(dim)(x, not train)
+                # if x.shape[1] in self.attention_resolutions:
+                #     # apply attention at certain levels of resolutions
+                #     x = ResidualAttentionBlock(
+                #         dim, self.attention_num_heads, self.num_groups
+                #     )(x)
 
             if not is_last:
                 x = UpSample(dim, self.kernel_size)(x)
