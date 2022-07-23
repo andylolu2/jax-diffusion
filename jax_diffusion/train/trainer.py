@@ -178,7 +178,7 @@ class Trainer:
             "rng": rng2,
             "constants": (
                 self._config.diffusion.T,
-                state.ema_params,
+                state,
                 alphas(self._config.diffusion),
                 alpha_bars(self._config.diffusion),
                 betas(self._config.diffusion),
@@ -194,7 +194,7 @@ class Trainer:
                     constants is a tuple of (T, alphas, alpha_bars, betas).
             """
             x, rng, constants = val["x"], val["rng"], val["constants"]
-            T, params, alpha, alpha_bar, beta = constants
+            T, state, alpha, alpha_bar, beta = constants
             t = T - i - 1
             alpha_t = alpha[t]
             alpha_t_bar = alpha_bar[t]
@@ -210,8 +210,7 @@ class Trainer:
             )
 
             t_input = jnp.full((x.shape[0], 1), t, dtype=jnp.float32)
-            eps = jax.random.normal(rng, shape=x.shape, dtype=jnp.float32)
-            # eps = self._forward_fn(params, {"x_t": x, "t": t_input}, train=False)
+            eps = state.apply_fn({"params": state.ema_params}, x, t_input, train=False)
 
             x = (1 / alpha_t**0.5) * (
                 x - ((1 - alpha_t) / (1 - alpha_t_bar) ** 0.5) * eps
