@@ -210,7 +210,8 @@ class Trainer:
             )
 
             t_input = jnp.full((x.shape[0], 1), t, dtype=jnp.float32)
-            eps = self._forward_fn(params, {"x_t": x, "t": t_input}, train=False)
+            eps = jax.random.normal(rng, shape=x.shape, dtype=jnp.float32)
+            # eps = self._forward_fn(params, {"x_t": x, "t": t_input}, train=False)
 
             x = (1 / alpha_t**0.5) * (
                 x - ((1 - alpha_t) / (1 - alpha_t_bar) ** 0.5) * eps
