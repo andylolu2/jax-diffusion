@@ -171,8 +171,6 @@ class UNet(nn.Module):
     def __call__(self, x, time, train: bool):
         channels = x.shape[-1]
 
-        t = TimeEmbedding(self.time_embed_dim, self.sinusoidal_embed_dim)(time)
-
         x = nn.Conv(self.dim_init, (self.kernel_size_init, self.kernel_size_init))(x)
 
         make_res = partial(
@@ -190,7 +188,7 @@ class UNet(nn.Module):
             dim = self.dim_init * dim_mult
 
             for _ in range(self.num_res_blocks):
-                x = make_res(dim)(x, not train, time_emb=t)
+                x = make_res(dim)(x, not train)
                 if x.shape[1] in self.attention_resolutions:
                     # apply attention at certain levels of resolutions
                     x = ResidualAttentionBlock(
@@ -205,11 +203,11 @@ class UNet(nn.Module):
 
         # middle
         dim_mid = self.dim_init * self.dim_mults[-1]
-        x = make_res(dim_mid)(x, not train, time_emb=t)
+        x = make_res(dim_mid)(x, not train)
         x = ResidualAttentionBlock(dim_mid, self.attention_num_heads, self.num_groups)(
             x
         )
-        x = make_res(dim_mid)(x, not train, time_emb=t)
+        x = make_res(dim_mid)(x, not train)
 
         # upsample
         for i, dim_mult in enumerate(reversed(self.dim_mults)):
@@ -219,7 +217,7 @@ class UNet(nn.Module):
             for _ in range(self.num_res_blocks + 1):
                 # concatenate by last (channel) dimension
                 x = jnp.concatenate((x, hs.pop()), axis=-1)
-                x = make_res(dim)(x, not train, time_emb=t)
+                x = make_res(dim)(x, not train)
                 if x.shape[1] in self.attention_resolutions:
                     # apply attention at certain levels of resolutions
                     x = ResidualAttentionBlock(
@@ -232,6 +230,6 @@ class UNet(nn.Module):
         assert not hs
 
         # final
-        x = make_res(self.dim_init)(x, not train, time_emb=t)
+        x = make_res(self.dim_init)(x, not train)
         x = nn.Conv(channels, kernel_size=(1, 1))(x)
         return x
