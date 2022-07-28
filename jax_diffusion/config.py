@@ -29,6 +29,7 @@ def get_config() -> ConfigDict:
                     name="fashion_mnist",
                     resize_dim=32,
                     data_dir=str(Path.home() / "tensorflow_datasets"),
+                    prefetch=5,
                 ),
                 training=dict(
                     batch_size=128,

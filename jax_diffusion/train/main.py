@@ -8,11 +8,7 @@ from tqdm import tqdm
 
 from jax_diffusion.config import get_config
 from jax_diffusion.train.trainer import Trainer
-from jax_diffusion.utils import (
-    create_checkpoint_action,
-    create_eval_action,
-    create_log_action,
-)
+from jax_diffusion.utils.actions import LogAction, EvalAction, CheckpointAction
 
 
 def main():
@@ -22,7 +18,7 @@ def main():
     config = get_config()
 
     # setup rng
-    k0, k1, k2, k3 = random.split(random.PRNGKey(config.seed), num=4)
+    k0, k1 = random.split(random.PRNGKey(config.seed))
     np.random.seed(config.seed)
 
     # setup trainer
@@ -38,21 +34,13 @@ def main():
     ckpt_dir = str(Path(config.ckpt_dir) / wandb.run.name)
 
     periodic_actions = [
-        create_log_action(
-            interval=config.log_interval,
-            rng=k1,
-        ),
-        create_checkpoint_action(
+        LogAction(interval=config.log_interval),
+        CheckpointAction(
             interval=config.ckpt_interval,
             trainer=trainer,
             ckpt_dir=ckpt_dir,
-            rng=k2,
         ),
-        create_eval_action(
-            interval=config.eval_interval,
-            trainer=trainer,
-            rng=k3,
-        ),
+        EvalAction(interval=config.eval_interval, rng=k1, trainer=trainer),
     ]
 
     # main loop
@@ -61,6 +49,6 @@ def main():
             metrics = trainer.step()
 
             for pa in periodic_actions:
-                pa(step, metrics)
+                pa(step, metrics=metrics)
 
             pbar.update()

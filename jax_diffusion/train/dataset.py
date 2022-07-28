@@ -45,21 +45,21 @@ AUTOTUNE = tf.data.experimental.AUTOTUNE
 
 
 def load(
-    dataset: str,
+    name: str,
     split: str,
-    *,
     subset: str,
     is_training: bool,
     batch_size: int,
     resize_dim: int,
     seed: int,
     data_dir: str,
+    prefetch: int,
     diffusion_config,
 ) -> Dataset:
     T = diffusion_config.T
 
     ds = _load_tfds(
-        dataset,
+        name,
         split,
         subset=subset,
         is_training=is_training,
@@ -86,7 +86,7 @@ def load(
 
     ds = ds.map(_diffusion_process)
     ds = ds.batch(batch_size, drop_remainder=True)
-    ds = ds.prefetch(3)
+    ds = ds.prefetch(prefetch)
 
     yield from tfds.as_numpy(ds)
 

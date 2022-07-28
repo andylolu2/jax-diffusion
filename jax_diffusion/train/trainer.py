@@ -1,7 +1,8 @@
+from __future__ import annotations
 from collections import defaultdict
 from functools import partial
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Sequence
 
 import jax
 import jax.numpy as jnp
@@ -20,35 +21,14 @@ from jax_diffusion.utils import image_grid
 class TrainState(train_state.TrainState):
     ema_params: FrozenDict[str, Any]
 
-    @classmethod
-    def create(cls, *, apply_fn, params, tx, **kwargs):
-        opt_state = tx.init(params)
-        ema_params = params
-        return cls(
-            step=0,
-            apply_fn=apply_fn,
-            params=params,
-            ema_params=ema_params,
-            tx=tx,
-            opt_state=opt_state,
-            **kwargs,
-        )
-
     def apply_gradients(self, *, grads, step_size: float, **kwargs):
-        updates, new_opt_state = self.tx.update(grads, self.opt_state, self.params)
-        new_params = optax.apply_updates(self.params, updates)
+        next_state = super().apply_gradients(self, grads=grads, **kwargs)
         new_ema_params = optax.incremental_update(
-            new_tensors=new_params,
+            new_tensors=next_state.params,
             old_tensors=self.ema_params,
             step_size=step_size,
         )
-        return self.replace(
-            step=self.step + 1,
-            params=new_params,
-            ema_params=new_ema_params,
-            opt_state=new_opt_state,
-            **kwargs,
-        )
+        return next_state.replace(ema_params=new_ema_params)
 
 
 class Trainer:
@@ -57,19 +37,19 @@ class Trainer:
         self._config = config
 
         # Initialized at self._initialize_train()
-        self._state: Optional[TrainState] = None
-        self._lr_schedule: Optional[optax.Schedule] = None
-        self._train_input: Optional[dataset.Dataset] = None
+        self._state: TrainState | None = None
+        self._lr_schedule: optax.Schedule | None = None
+        self._train_input: dataset.Dataset | None = None
 
     @property
-    def global_step(self) -> int:
+    def global_step(self):
         if self._state is None:
             return 0
         return int(self._state.step)
 
     def step(self):
         """Performs one training step"""
-        if self._train_input is None:
+        if self._train_input is None or self._state is None:
             self._initialize_train()
 
         assert self._train_input is not None
@@ -117,7 +97,9 @@ class Trainer:
         count = sum(x.size for x in jax.tree_leaves(params)) / 1e6
         print(f"Parameter count: {count:.2f}M")
 
-        return TrainState.create(apply_fn=model.apply, params=params, tx=tx)
+        return TrainState.create(
+            apply_fn=model.apply, params=params, ema_params=params, tx=tx
+        )
 
     def _forward_fn(self, params, inputs, train: bool, rng=None):
         assert self._state is not None
@@ -272,34 +254,29 @@ class Trainer:
     def _build_train_input(self):
         return self._load_data(
             split="train",
-            subset=self._config.training.subset,
             is_training=True,
+            subset=self._config.training.subset,
             batch_size=self._config.training.batch_size,
-            seed=self._config.seed,
         )
 
     def _build_eval_input(self):
         return self._load_data(
             split="test",
-            subset=self._config.eval.subset,
             is_training=False,
+            subset=self._config.eval.subset,
             batch_size=self._config.eval.batch_size,
-            seed=self._config.seed,
         )
 
     def _load_data(
-        self, split, *, subset: str, is_training: bool, batch_size: int, seed: int
+        self, split, *, subset: str, is_training: bool, batch_size: int
     ) -> dataset.Dataset:
-        name = self._config.dataset.name
         ds = dataset.load(
-            name,
             split,
             subset=subset,
             is_training=is_training,
             batch_size=batch_size,
-            seed=seed,
-            resize_dim=self._config.dataset.resize_dim,
-            data_dir=self._config.dataset.data_dir,
+            seed=self._config.seed,
+            **self._config.dataset_kwargs,
             diffusion_config=self._config.diffusion,
         )
         return ds
