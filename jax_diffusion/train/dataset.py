@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from typing import Generator
+from functools import partial
 
 import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from typing_extensions import TypedDict
 
-from jax_diffusion.diffusion import alpha_bars
+from jax_diffusion.types import Dataset
 
+AUTOTUNE = tf.data.experimental.AUTOTUNE
 DATASETS = {
     "mnist": {
         "mean": np.array([33.31]),
@@ -33,101 +33,51 @@ DATASETS = {
 }
 
 
-class Batch(TypedDict):
-    eps: np.ndarray
-    x_t: np.ndarray
-    t: np.ndarray
-
-
-Dataset = Generator[Batch, None, None]
-
-AUTOTUNE = tf.data.experimental.AUTOTUNE
-
-
 def load(
+    train: bool,
     name: str,
-    split: str,
     subset: str,
-    is_training: bool,
+    resize_dim: int,
+    data_dir: str,
+    prefetch: int | str,
     batch_size: int,
-    resize_dim: int,
-    seed: int,
-    data_dir: str,
-    prefetch: int,
-    diffusion_config,
-) -> Dataset:
-    T = diffusion_config.T
-
-    ds = _load_tfds(
-        name,
-        split,
-        subset=subset,
-        is_training=is_training,
-        batch_size=batch_size,
-        resize_dim=resize_dim,
-        seed=seed,
-        data_dir=data_dir,
-    )
-
-    def _diffusion_process(sample):
-        """See Algorithm 1 in https://arxiv.org/pdf/2006.11239.pdf"""
-        t = tf.random.uniform(shape=(), minval=0, maxval=T, dtype=tf.int32, seed=seed)
-        alpha_t_bar = tf.convert_to_tensor(alpha_bars(diffusion_config))[t]
-
-        x_0 = sample["image"]
-        eps = tf.random.normal(x_0.shape, seed=seed)
-
-        x_t = (alpha_t_bar**0.5) * x_0 + ((1 - alpha_t_bar) ** 0.5) * eps
-
-        t = tf.expand_dims(t, axis=-1)
-        t = tf.cast(t, dtype=tf.float32)
-
-        return {"eps": eps, "x_t": x_t, "t": t}
-
-    ds = ds.map(_diffusion_process)
-    ds = ds.batch(batch_size, drop_remainder=True)
-    ds = ds.prefetch(prefetch)
-
-    yield from tfds.as_numpy(ds)
-
-
-def _load_tfds(
-    dataset: str,
-    split: str,
-    *,
-    subset: str,
-    is_training: bool,
-    batch_size: int | None,
-    resize_dim: int,
-    data_dir: str,
+    repeat: bool = False,
+    shuffle: bool = False,
     seed: int | None = None,
-) -> tf.data.Dataset:
+    buffer_size: int | None = None,
+) -> Dataset:
+    split = "train" if train else "test"
+    split = DATASETS[name]["splits"][split]
 
-    split = DATASETS[dataset]["splits"][split]
     ds = tfds.load(
-        dataset,
+        name,
         split=f"{split}[:{subset}]",
         data_dir=data_dir,
         shuffle_files=True,
     )
     assert isinstance(ds, tf.data.Dataset)
 
-    if is_training:
+    preprocess = partial(preprocess_image, name, resize_dim)
+    ds = ds.map(preprocess)
+
+    if shuffle:
         assert seed is not None
-        assert batch_size is not None
-        ds = ds.shuffle(buffer_size=500 * batch_size, seed=seed)
+        assert buffer_size is not None
+        ds = ds.shuffle(buffer_size=buffer_size, seed=seed)
+    if repeat:
         ds = ds.repeat()
 
-    def _preprocess_sample(sample):
-        image = _preprocess_image(dataset, sample["image"], resize_dim)
-        return {"image": image}
+    ds = ds.batch(batch_size, drop_remainder=True)
+    ds = ds.prefetch(AUTOTUNE if prefetch == "auto" else prefetch)
 
-    ds = ds.map(_preprocess_sample)
-    return ds
+    yield from tfds.as_numpy(ds)
 
 
-def _preprocess_image(dataset: str, image: tf.Tensor, image_dim: int):
-    assert dataset in DATASETS
+def preprocess_image(name: str, image_dim: int, sample):
+    """Center crop and normalize"""
+    image = sample["image"]
+
+    assert name in DATASETS
     assert image.dtype == tf.uint8
     tf.assert_rank(image, 3)
 
@@ -144,48 +94,39 @@ def _preprocess_image(dataset: str, image: tf.Tensor, image_dim: int):
     )
     assert image.dtype == tf.float32
 
-    stats = DATASETS[dataset]
+    stats = DATASETS[name]
     image -= tf.constant(stats["mean"], dtype=image.dtype)
     image /= tf.constant(stats["std_dev"], dtype=image.dtype)
-    return image
+    return {"image": image}
 
 
 if __name__ == "__main__":
-
     from jax_diffusion.config import get_config
 
     tf.config.experimental.set_visible_devices([], "GPU")
 
-    config = get_config().experiment_kwargs.config.dataset
+    config = get_config().experiment_kwargs.config
 
-    ds = _load_tfds(
-        "celeb_a",
-        "train",
+    ds = load(
+        train=True,
+        batch_size=128,
         subset="100%",
-        is_training=False,
-        batch_size=None,
-        resize_dim=64,
-        data_dir=config.data_dir,
-        seed=0,
+        buffer_size=100,
+        shuffle=False,
+        repeat=False,
+        **config.dataset_kwargs,
     )
-    w, h, c = next(iter(ds))["image"].shape
 
-    count = ds.reduce(tf.constant(0, dtype=tf.float32), lambda acc, _: acc + 1)
-    mean = ds.reduce(
-        tf.zeros((c,), dtype=tf.float32),
-        lambda acc, item: acc + tf.reduce_mean(item["image"], axis=(0, 1)) / count,
-    )
-    variance = ds.reduce(
-        tf.zeros((c,), dtype=tf.float32),
-        lambda acc, item: acc
-        + tf.reduce_mean((item["image"] - mean) ** 2, axis=(0, 1)) / count,
-    )
-    std_dev = variance**0.5
+    count = 0
+    mean = 0
+    mean_of_sq = 0
+    for i, inputs in enumerate(ds):
+        im = inputs["image"]
+        count += 1
+        mean = (mean * i + np.mean(im, axis=(0, 1, 2))) / (i + 1)
+        mean_of_sq = (mean_of_sq * i + np.mean(im**2, axis=(0, 1, 2))) / (i + 1)
 
-    count = count.numpy()
-    mean = mean.numpy()
-    std_dev = std_dev.numpy()
-
+    std_dev = np.sqrt(mean_of_sq - mean**2)
     print(f"COUNT: {count}")
     print(f"MEAN: {mean}")
     print(f"STD_DEV: {std_dev}")

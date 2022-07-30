@@ -29,13 +29,13 @@ class PeriodicAction:
         self._interval = interval
         self._key = rng
 
-    def __call__(self, step: int, *, **kwargs):
+    def __call__(self, step: int, **kwargs):
         if self._should_run(step):
-            self.run(step, **kwargs)
+            self.run(step=step, **kwargs)
             self._prev_time = time.time()
             self._prev_step = step
 
-    def run(self, *args, **kwargs):
+    def run(self, **kwargs):
         raise NotImplementedError()
 
     def _should_run(self, step: int):
@@ -43,7 +43,7 @@ class PeriodicAction:
             return True
         if self.interval_type == IntervalType.Secs:
             return time.time() - self._prev_time >= self._interval
-        elif self._interval_type == IntervalType.Steps:
+        elif self.interval_type == IntervalType.Steps:
             return step - self._prev_step >= self._interval
 
     def _next_key(self):
@@ -51,13 +51,15 @@ class PeriodicAction:
         self._key, rng = random.split(self._key)
         return rng
 
+
 class LogAction(PeriodicAction):
     interval_type = IntervalType.Steps
 
-    def run(self, step: int, metrics: Mapping[str, Any], *args, **kwargs):
+    def run(self, step: int, metrics: Mapping[str, Any], **kwargs):
         metrics = {"train/" + k: v for k, v in metrics.items()}
         commit = self._prev_time is None or (time.time() - self._prev_time) >= 1
         wandb.log(data=metrics, step=step, commit=commit)
+
 
 class EvalAction(PeriodicAction):
     interval_type = IntervalType.Secs
@@ -66,18 +68,19 @@ class EvalAction(PeriodicAction):
         super().__init__(interval, rng)
         self._trainer = trainer
 
-    def run(self, step: int, *args, **kwargs):
-        metrics = self.trainer.evaluate(rng=self._next_key())
+    def run(self, step: int, **kwargs):
+        metrics = self._trainer.evaluate(rng=self._next_key())
         metrics = {"eval/" + k: v for k, v in metrics.items()}
         wandb.log(data=metrics, step=step)
+
 
 class CheckpointAction(PeriodicAction):
     interval_type = IntervalType.Secs
 
-    def __init__(self, interval: float, rng: random.KeyArray, trainer: Trainer, ckpt_dir: str):
-        super().__init__(interval, rng)
+    def __init__(self, interval: float, trainer: Trainer, ckpt_dir: str):
+        super().__init__(interval)
         self._trainer = trainer
         self._ckpt_dir = ckpt_dir
 
-    def run(self, *args, **kwargs):
+    def run(self, **kwargs):
         self._trainer.save_checkpoint(self._ckpt_dir)

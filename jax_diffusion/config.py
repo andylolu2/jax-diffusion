@@ -1,9 +1,11 @@
 from pathlib import Path
 
-from ml_collections import ConfigDict
+from ml_collections import ConfigDict, FrozenConfigDict
+
+from jax_diffusion.types import Config
 
 
-def get_config() -> ConfigDict:
+def get_config() -> Config:
     config = ConfigDict()
 
     config.project_name = "jax-diffusion"
@@ -11,11 +13,13 @@ def get_config() -> ConfigDict:
     # config.restore = str(Path.cwd() / "checkpoints/deft-voice-105")
     config.restore = None
 
-    d_model = 32
-    training_steps = 30000
+    seed = 42
+    d_model = 8
+    grad_acc = 1
+    steps = 30000
 
-    config.seed = 42
-    config.training_steps = training_steps
+    config.seed = seed
+    config.steps = steps * grad_acc
     config.ckpt_dir = str(Path.cwd() / "checkpoints")
     config.log_interval = 1
     config.ckpt_interval = 60
@@ -24,22 +28,28 @@ def get_config() -> ConfigDict:
     config.experiment_kwargs = ConfigDict(
         dict(
             config=dict(
-                seed=42,
-                dataset=dict(
+                seed=seed,
+                dataset_kwargs=dict(
                     name="fashion_mnist",
                     resize_dim=32,
                     data_dir=str(Path.home() / "tensorflow_datasets"),
-                    prefetch=5,
+                    prefetch="auto",
+                    seed=seed,
                 ),
-                training=dict(
-                    batch_size=128,
-                    subset="100%",
+                train=dict(
+                    dataset_kwargs=dict(
+                        batch_size=64,
+                        subset="100%",
+                        buffer_size=1000,
+                        shuffle=True,
+                        repeat=True,
+                    ),
                     ema_step_size=1 - 0.9995,
                     optimizer=dict(
                         optimizer_type="adam",
                         kwargs=dict(
                             max_grad_norm=1.0,
-                            grac_acc_steps=1,
+                            grac_acc_steps=grad_acc,
                         ),
                         lr_schedule=dict(
                             # schedule_type="constant",
@@ -51,15 +61,17 @@ def get_config() -> ConfigDict:
                                 init_value=0,
                                 peak_value=4e-4,
                                 warmup_steps=500,
-                                decay_steps=training_steps,
-                                decay_factor=0.1,
+                                decay_steps=steps * grad_acc,
+                                decay_factor=10,
                             ),
                         ),
                     ),
                 ),
                 eval=dict(
-                    batch_size=32,
-                    subset="20%",
+                    dataset_kwargs=dict(
+                        batch_size=64,
+                        subset="20%",
+                    ),
                     gen_samples=4,
                 ),
                 diffusion=dict(
@@ -88,4 +100,4 @@ def get_config() -> ConfigDict:
 
     config.lock()
 
-    return config
+    return FrozenConfigDict(config)

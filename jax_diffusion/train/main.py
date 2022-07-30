@@ -6,23 +6,21 @@ import wandb
 from jax import random
 from tqdm import tqdm
 
-from jax_diffusion.config import get_config
 from jax_diffusion.train.trainer import Trainer
-from jax_diffusion.utils.actions import LogAction, EvalAction, CheckpointAction
+from jax_diffusion.types import Config
+from jax_diffusion.utils.actions import CheckpointAction, EvalAction, LogAction
 
 
-def main():
+def main(config: Config):
     # force tensorflow to use CPU
     tf.config.experimental.set_visible_devices([], "GPU")
 
-    config = get_config()
-
     # setup rng
-    k0, k1 = random.split(random.PRNGKey(config.seed))
+    init_rng, eval_rng, step_rng = random.split(random.PRNGKey(config.seed), 3)
     np.random.seed(config.seed)
 
     # setup trainer
-    trainer = Trainer(k0, **config.experiment_kwargs)
+    trainer = Trainer(init_rng, **config.experiment_kwargs)
     if config.restore is not None:
         trainer.restore_checkpoint(config.restore)
 
@@ -36,19 +34,18 @@ def main():
     periodic_actions = [
         LogAction(interval=config.log_interval),
         CheckpointAction(
-            interval=config.ckpt_interval,
-            trainer=trainer,
-            ckpt_dir=ckpt_dir,
+            interval=config.ckpt_interval, trainer=trainer, ckpt_dir=ckpt_dir
         ),
-        EvalAction(interval=config.eval_interval, rng=k1, trainer=trainer),
+        EvalAction(interval=config.eval_interval, rng=eval_rng, trainer=trainer),
     ]
 
     # main loop
-    with tqdm(total=config.training_steps, initial=trainer.global_step) as pbar:
-        for step in range(trainer.global_step, config.training_steps):
-            metrics = trainer.step()
+    with tqdm(total=config.steps, initial=trainer.global_step) as pbar:
+        for step in range(trainer.global_step, config.steps):
+            step_rng, _step_rng = random.split(step_rng)
+            metrics = trainer.step(_step_rng)
 
             for pa in periodic_actions:
-                pa(step, metrics=metrics)
+                pa(step=step, metrics=metrics)
 
             pbar.update()
