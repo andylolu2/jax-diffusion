@@ -6,31 +6,43 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-from jax_diffusion.types import Dataset
+from jax_diffusion.types import Batch, Dataset
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 DATASETS = {
     "mnist": {
+        "channels": 1,
         "mean": np.array([33.31]),
         "std_dev": np.array([77.24]),
         "splits": {"train": "train", "test": "test"},
     },
     "fashion_mnist": {
+        "channels": 1,
         "mean": np.array([72.94]),
         "std_dev": np.array([88.638]),
         "splits": {"train": "train", "test": "test"},
     },
     "stl10": {
+        "channels": 3,
         "mean": np.array([112.3418, 108.9556, 98.3724]),
         "std_dev": np.array([68.0722, 66.1841, 68.0583]),
         "splits": {"train": "unlabelled", "test": "test"},
     },
     "celeb_a": {
+        "channels": 3,
         "mean": np.array([128.5573, 107.7400, 94.8121]),
         "std_dev": np.array([78.1818, 72.5204, 72.1100]),
         "splits": {"train": "train", "test": "test"},
     },
 }
+
+
+def sample(
+    name: str, resize_dim: int, batch_size: int, dtype=np.float32, **kwargs
+) -> Batch:
+    c = DATASETS[name]["channels"]
+    x = np.zeros((batch_size, resize_dim, resize_dim, c), dtype=dtype)
+    return {"image": x, "label": None}
 
 
 def load(
@@ -111,7 +123,6 @@ if __name__ == "__main__":
         train=True,
         batch_size=128,
         subset="100%",
-        buffer_size=100,
         shuffle=False,
         repeat=False,
         **config.dataset_kwargs,

@@ -35,7 +35,7 @@ class TrainState(train_state.TrainState):
 
 class Trainer:
     def __init__(self, rng: Rng, config: Config):
-        self._rng = rng
+        self._init_rng = rng
         self._config = config
 
         # Initialized at self._initialize_train()
@@ -50,14 +50,19 @@ class Trainer:
         return int(self._state.step)
 
     @property
-    def next_rng(self):
-        self._rng, rng = random.split(self._rng)
-        return rng
+    def _sample_batch(self):
+        """Does not require dataset to be downloaded."""
+        return dataset.sample(
+            **self._config.train.dataset_kwargs,
+            **self._config.dataset_kwargs,
+        )
 
     def step(self, rng: Rng):
         """Performs one training step"""
-        if self._train_input is None or self._state is None:
-            self._initialize_train()
+        if self._train_input is None:
+            self._train_input = self._build_train_input()
+        if self._state is None:
+            self._state = self._create_train_state()
 
         assert self._train_input is not None
         assert self._state is not None
@@ -77,25 +82,29 @@ class Trainer:
             rng, _rng = random.split(rng)
             m = self._eval_fn(self._state, inputs, _rng)
             for k, v in m.items():
-                metrics[k] = (m[k] * i + v) / (i + 1)
+                metrics[k] = metrics[k] * (i / (i + 1)) + v / (i + 1)
 
         generated = self.sample(num=self._config.eval.gen_samples, rng=rng)
         image = image_grid(generated)
-        metrics["sample"] = wandb.Image(image)
+        out = dict(metrics)
+        out["sample"] = wandb.Image(image)
 
-        return metrics
+        return out
 
-    def _create_train_state(self, inputs: Batch, rng: Rng):
-        rng_param, rng_dropout = random.split(rng)
-        init_rngs = {"params": rng_param, "dropout": rng_dropout}
+    def _create_train_state(self):
+        rng_diffusion, rng_param, rng_dropout = random.split(self._init_rng, 3)
 
         model = UNet(**self._config.model.unet_kwargs)
-        x_t, t, _ = forward_random(self._config.diffusion, inputs["image"], rng)
-        params = model.init(init_rngs, x_t, t, train=True)
-        tx, self._lr_schedule = self._create_optimizer()
+        x_t, t, _ = forward_random(
+            self._config.diffusion, self._sample_batch["image"], rng_diffusion
+        )
+        init_rngs = {"params": rng_param, "dropout": rng_dropout}
 
+        params = model.init(init_rngs, x_t, t, train=True)
         count = sum(x.size for x in jax.tree_leaves(params)) / 1e6
         print(f"Parameter count: {count:.2f}M")
+
+        tx, self._lr_schedule = self._create_optimizer()
 
         return TrainState.create(
             apply_fn=model.apply,
@@ -118,7 +127,7 @@ class Trainer:
         return self._state.apply_fn(params, image, t, train, rngs=rngs)
 
     def _loss(self, pred: ndarray, actual: ndarray):
-        return optax.l2_loss(pred, actual).mean()
+        return optax.l2_loss(pred, actual).mean()  # type: ignore
 
     def _compute_metrics(self, pred: ndarray, actual: ndarray):
         loss = self._loss(pred, actual)
@@ -155,8 +164,7 @@ class Trainer:
         return metrics
 
     def sample(self, num: int, rng: Rng):
-        assert self._train_input is not None
-        x_ = next(self._train_input)["image"]
+        x_ = self._sample_batch["image"]
         shape = (num,) + x_.shape[1:]
 
         rng1, rng2 = jax.random.split(rng)
@@ -187,10 +195,6 @@ class Trainer:
 
         return optimizer, lr_schedule
 
-    def _initialize_train(self):
-        self._train_input = self._build_train_input()
-        self._state = self._create_train_state(next(self._train_input), self.next_rng)
-
     def _build_train_input(self):
         return dataset.load(
             train=True,
@@ -214,14 +218,11 @@ class Trainer:
         )
 
     def restore_checkpoint(self, ckpt_dir: str):
-        assert Path(ckpt_dir).is_dir() or Path(ckpt_dir).is_file
+        path = Path(ckpt_dir)
+        assert path.is_dir() or path.is_file()
 
         if self._state is None:
-            self._initialize_train()
+            self._state = self._create_train_state()
 
         print(f"Restoring from {ckpt_dir}")
-
-        self._state = checkpoints.restore_checkpoint(
-            ckpt_dir=ckpt_dir,
-            target=self._state,
-        )
+        self._state = checkpoints.restore_checkpoint(ckpt_dir=path, target=self._state)
