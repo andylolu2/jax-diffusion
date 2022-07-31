@@ -153,7 +153,7 @@ class ResidualAttentionBlock(nn.Module):
 
 class UNet(nn.Module):
     dim_init: int
-    kernel_size_init: int
+    kernel_size: int
     dim_mults: Sequence[int]
 
     attention_resolutions: Collection[int]
@@ -163,7 +163,6 @@ class UNet(nn.Module):
     sinusoidal_embed_dim: int
     time_embed_dim: int
 
-    kernel_size: int
     num_groups: int
     dropout: float
 
@@ -173,7 +172,7 @@ class UNet(nn.Module):
 
         t = TimeEmbedding(self.time_embed_dim, self.sinusoidal_embed_dim)(time)
 
-        x = nn.Conv(self.dim_init, (self.kernel_size_init, self.kernel_size_init))(x)
+        x = nn.Conv(self.dim_init, (self.kernel_size, self.kernel_size))(x)
 
         make_res = partial(
             ResnetBlock,
