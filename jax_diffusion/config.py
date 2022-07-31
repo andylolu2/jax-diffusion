@@ -9,12 +9,12 @@ def get_config() -> Config:
     config = ConfigDict()
 
     config.project_name = "jax-diffusion"
-
-    # config.restore = str(Path.cwd() / "checkpoints/deft-voice-105")
+    # config.restore = str(Path.cwd() / "checkpoints/fallen-pond-139")
     config.restore = None
+    config.dry_run = True
 
     seed = 42
-    d_model = 8
+    d_model = 64
     grad_acc = 1
     steps = 30000
 
@@ -30,8 +30,8 @@ def get_config() -> Config:
             config=dict(
                 seed=seed,
                 dataset_kwargs=dict(
-                    name="fashion_mnist",
-                    resize_dim=32,
+                    name="celeb_a",
+                    resize_dim=64,
                     data_dir=str(Path.home() / "tensorflow_datasets"),
                     prefetch="auto",
                     seed=seed,
@@ -82,8 +82,7 @@ def get_config() -> Config:
                 model=dict(
                     unet_kwargs=dict(
                         dim_init=d_model,
-                        kernel_size_init=3,
-                        dim_mults=(1, 2, 2, 4),
+                        dim_mults=(1, 2, 2, 4, 4),
                         attention_resolutions=(16,),
                         attention_num_heads=4,
                         num_res_blocks=2,

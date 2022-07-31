@@ -17,27 +17,32 @@ def main(config: Config):
 
     # setup rng
     init_rng, eval_rng, step_rng = random.split(random.PRNGKey(config.seed), 3)
-    np.random.seed(config.seed)
 
     # setup trainer
     trainer = Trainer(init_rng, **config.experiment_kwargs)
     if config.restore is not None:
         trainer.restore_checkpoint(config.restore)
 
-    wandb.init(
-        project=config.project_name,
-        dir=str(Path.cwd() / "_wandb"),
-        config=config.experiment_kwargs.config.to_dict(),
-    )
-    ckpt_dir = str(Path(config.ckpt_dir) / wandb.run.name)
+    if not config.dry_run:
+        # setup wandb
+        wandb.login()
+        wandb.init(
+            project=config.project_name,
+            dir=str(Path.cwd() / "_wandb"),
+            config=config.experiment_kwargs.config.to_dict(),
+        )
 
-    periodic_actions = [
-        LogAction(interval=config.log_interval),
-        CheckpointAction(
-            interval=config.ckpt_interval, trainer=trainer, ckpt_dir=ckpt_dir
-        ),
-        EvalAction(interval=config.eval_interval, rng=eval_rng, trainer=trainer),
-    ]
+    if config.dry_run:
+        periodic_actions = []
+    else:
+        ckpt_dir = str(Path(config.ckpt_dir) / wandb.run.name)
+        periodic_actions = [
+            LogAction(interval=config.log_interval),
+            CheckpointAction(
+                interval=config.ckpt_interval, trainer=trainer, ckpt_dir=ckpt_dir
+            ),
+            EvalAction(interval=config.eval_interval, rng=eval_rng, trainer=trainer),
+        ]
 
     # main loop
     with tqdm(total=config.steps, initial=trainer.global_step) as pbar:
@@ -49,3 +54,6 @@ def main(config: Config):
                 pa(step=step, metrics=metrics)
 
             pbar.update()
+
+    if not config.dry_run:
+        wandb.finish()
