@@ -1,5 +1,6 @@
 black
 flax
+gdown
 jupyter
 ml-collections
 numpy
