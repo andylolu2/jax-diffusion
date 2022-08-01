@@ -24,8 +24,8 @@ class PeriodicAction:
         interval: float,
         rng: random.KeyArray | None = None,
     ):
-        self._prev_time = None
-        self._prev_step = None
+        self._prev_time = time.time()
+        self._prev_step = 0
         self._interval = interval
         self._key = rng
 
@@ -39,8 +39,6 @@ class PeriodicAction:
         raise NotImplementedError()
 
     def _should_run(self, step: int):
-        if self._prev_time is None or self._prev_step is None:
-            return True
         if self.interval_type == IntervalType.Secs:
             return time.time() - self._prev_time >= self._interval
         elif self.interval_type == IntervalType.Steps:
@@ -57,7 +55,7 @@ class LogAction(PeriodicAction):
 
     def run(self, step: int, metrics: Mapping[str, Any], **kwargs):
         metrics = {"train/" + k: v for k, v in metrics.items()}
-        commit = self._prev_time is None or (time.time() - self._prev_time) >= 1
+        commit = time.time() - self._prev_time >= 1
         wandb.log(data=metrics, step=step, commit=commit)
 
 
@@ -71,7 +69,7 @@ class EvalAction(PeriodicAction):
     def run(self, step: int, **kwargs):
         metrics = self._trainer.evaluate(rng=self._next_key())
         metrics = {"eval/" + k: v for k, v in metrics.items()}
-        wandb.log(data=metrics, step=step)
+        wandb.log(data=metrics, step=step, commit=True)
 
 
 class CheckpointAction(PeriodicAction):

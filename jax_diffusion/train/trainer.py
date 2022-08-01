@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
 import jax
 import optax
@@ -76,7 +76,7 @@ class Trainer:
 
     def evaluate(self, rng: Rng):
         """Performs evaluation on the evaluation dataset"""
-        metrics = defaultdict(int)
+        metrics: Dict[str, Any] = defaultdict(int)
 
         for i, inputs in enumerate(self._build_eval_input()):
             rng, _rng = random.split(rng)
@@ -86,10 +86,9 @@ class Trainer:
 
         generated = self.sample(num=self._config.eval.gen_samples, rng=rng)
         image = image_grid(generated)
-        out = dict(metrics)
-        out["sample"] = wandb.Image(image)
+        metrics["sample"] = wandb.Image(image)
 
-        return out
+        return metrics
 
     def _create_train_state(self):
         rng_diffusion, rng_param, rng_dropout = random.split(self._init_rng, 3)

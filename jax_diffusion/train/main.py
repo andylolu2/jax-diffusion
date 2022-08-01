@@ -32,11 +32,10 @@ def main(config: Config):
             config=config.experiment_kwargs.config.to_dict(),
         )
 
-    if config.dry_run:
-        periodic_actions = []
-    else:
+    periodic_actions = []
+    if not config.dry_run:
         ckpt_dir = str(Path(config.ckpt_dir) / wandb.run.name)
-        periodic_actions = [
+        periodic_actions += [
             LogAction(interval=config.log_interval),
             CheckpointAction(
                 interval=config.ckpt_interval, trainer=trainer, ckpt_dir=ckpt_dir

@@ -14,7 +14,7 @@ def get_config() -> Config:
     config.dry_run = True
 
     seed = 42
-    d_model = 64
+    d_model = 8
     grad_acc = 1
     steps = 30000
 
