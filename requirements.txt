@@ -5,7 +5,7 @@ jupyter
 ml-collections
 numpy
 optax
-tensorflow
+tensorflow-cpu
 tensorflow-datasets
 tqdm
 wandb
