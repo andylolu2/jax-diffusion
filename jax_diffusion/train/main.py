@@ -5,6 +5,7 @@ import tensorflow as tf
 import wandb
 from absl import logging
 from jax import random
+from ml_collections import FrozenConfigDict
 from tqdm import tqdm
 
 from jax_diffusion.train.trainer import Trainer
@@ -12,8 +13,8 @@ from jax_diffusion.types import Config
 from jax_diffusion.utils.actions import CheckpointAction, EvalAction, LogAction
 
 
-def main(config: Config):
-    # force tensorflow to use CPU
+def setup(config: Config):
+    # setup tensorflow to use CPU
     tf.config.experimental.set_visible_devices([], "GPU")
 
     # setup logging
@@ -27,15 +28,7 @@ def main(config: Config):
     if config.restore is not None:
         trainer.restore_checkpoint(config.restore)
 
-    if not config.dry_run:
-        # setup wandb
-        wandb.login()
-        wandb.init(
-            project=config.project_name,
-            dir=str(Path.cwd() / "_wandb"),
-            config=config.experiment_kwargs.config.to_dict(),
-        )
-
+    # setup period actions
     periodic_actions = []
     if not config.dry_run:
         ckpt_dir = str(Path(config.ckpt_dir) / wandb.run.name)
@@ -47,7 +40,16 @@ def main(config: Config):
             EvalAction(interval=config.eval_interval, rng=eval_rng, trainer=trainer),
         ]
 
+    return trainer, step_rng, periodic_actions
+
+
+def main(config: Config, dry_run: bool):
+    config.dry_run = dry_run
+    config = FrozenConfigDict(config)  # needed to be hashable
+
     # main loop
+    with wandb_run(config):
+        trainer, step_rng, periodic_actions = setup(config)
     with tqdm(total=config.steps, initial=trainer.global_step) as pbar:
         for step in range(trainer.global_step, config.steps):
             step_rng, _step_rng = random.split(step_rng)

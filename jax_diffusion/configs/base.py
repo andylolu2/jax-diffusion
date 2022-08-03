@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from ml_collections import ConfigDict, FrozenConfigDict
+from absl import logging
+from ml_collections import ConfigDict, FieldReference
 
 from jax_diffusion.types import Config
 
@@ -9,16 +10,17 @@ def get_config() -> Config:
     config = ConfigDict()
 
     config.project_name = "jax-diffusion"
-    # config.restore = str(Path.cwd() / "checkpoints/fallen-pond-139")
     config.restore = None
-    config.dry_run = True
+    config.dry_run = False
+    config.log_level = logging.INFO
 
     seed = 42
-    d_model = 8
-    grad_acc = 1
-    steps = 30000
+    d_model = FieldReference(8)
+    grad_acc = FieldReference(1)
+    steps = FieldReference(30000)
 
     config.seed = seed
+    config.effective_steps = steps
     config.steps = steps * grad_acc
     config.ckpt_dir = str(Path.cwd() / "checkpoints")
     config.log_interval = 1
@@ -30,8 +32,8 @@ def get_config() -> Config:
             config=dict(
                 seed=seed,
                 dataset_kwargs=dict(
-                    name="celeb_a",
-                    resize_dim=64,
+                    name="mnist",
+                    resize_dim=32,
                     data_dir=str(Path.home() / "tensorflow_datasets"),
                     prefetch="auto",
                     seed=seed,
@@ -52,15 +54,11 @@ def get_config() -> Config:
                             grac_acc_steps=grad_acc,
                         ),
                         lr_schedule=dict(
-                            # schedule_type="constant",
-                            # kwargs=dict(
-                            #     value=3e-6,
-                            # ),
                             schedule_type="cosine",
                             kwargs=dict(
                                 init_value=0,
                                 peak_value=4e-4,
-                                warmup_steps=500,
+                                warmup_steps=1000,
                                 decay_steps=steps * grad_acc,
                                 decay_factor=10,
                             ),
@@ -82,7 +80,7 @@ def get_config() -> Config:
                 model=dict(
                     unet_kwargs=dict(
                         dim_init=d_model,
-                        dim_mults=(1, 2, 2, 4, 4),
+                        dim_mults=(1, 1, 2, 2, 2),
                         attention_resolutions=(16,),
                         attention_num_heads=4,
                         num_res_blocks=2,
@@ -99,4 +97,4 @@ def get_config() -> Config:
 
     config.lock()
 
-    return FrozenConfigDict(config)
+    return config

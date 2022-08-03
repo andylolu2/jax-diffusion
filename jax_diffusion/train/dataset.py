@@ -113,11 +113,9 @@ def preprocess_image(name: str, image_dim: int, sample):
 
 
 if __name__ == "__main__":
-    from jax_diffusion.config import get_config
+    from pathlib import Path
 
     tf.config.experimental.set_visible_devices([], "GPU")
-
-    config = get_config().experiment_kwargs.config
 
     ds = load(
         train=True,
@@ -125,7 +123,11 @@ if __name__ == "__main__":
         subset="100%",
         shuffle=False,
         repeat=False,
-        **config.dataset_kwargs,
+        name="celeb_a",
+        resize_dim=64,
+        data_dir=str(Path.home() / "tensorflow_datasets"),
+        prefetch="auto",
+        seed=0,
     )
 
     count = 0
