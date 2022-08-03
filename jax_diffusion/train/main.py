@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import numpy as np
 import tensorflow as tf
 import wandb
 from absl import logging
@@ -11,6 +10,7 @@ from tqdm import tqdm
 from jax_diffusion.train.trainer import Trainer
 from jax_diffusion.types import Config
 from jax_diffusion.utils.actions import CheckpointAction, EvalAction, LogAction
+from jax_diffusion.utils.wandb import wandb_run
 
 
 def setup(config: Config):
@@ -50,15 +50,12 @@ def main(config: Config, dry_run: bool):
     # main loop
     with wandb_run(config):
         trainer, step_rng, periodic_actions = setup(config)
-    with tqdm(total=config.steps, initial=trainer.global_step) as pbar:
-        for step in range(trainer.global_step, config.steps):
-            step_rng, _step_rng = random.split(step_rng)
-            metrics = trainer.step(_step_rng)
+        with tqdm(total=config.steps, initial=trainer.global_step) as pbar:
+            for step in range(trainer.global_step, config.steps):
+                step_rng, _step_rng = random.split(step_rng)
+                metrics = trainer.step(_step_rng)
 
-            for pa in periodic_actions:
-                pa(step=step, metrics=metrics)
+                for pa in periodic_actions:
+                    pa(step=step, metrics=metrics)
 
-            pbar.update()
-
-    if not config.dry_run:
-        wandb.finish()
+                pbar.update()
