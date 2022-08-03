@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import tensorflow as tf
 import wandb
+from absl import logging
 from jax import random
 from tqdm import tqdm
 
@@ -14,6 +15,9 @@ from jax_diffusion.utils.actions import CheckpointAction, EvalAction, LogAction
 def main(config: Config):
     # force tensorflow to use CPU
     tf.config.experimental.set_visible_devices([], "GPU")
+
+    # setup logging
+    logging.set_verbosity(config.log_level)
 
     # setup rng
     init_rng, eval_rng, step_rng = random.split(random.PRNGKey(config.seed), 3)

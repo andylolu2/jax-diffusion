@@ -8,6 +8,7 @@ from typing import Any, Dict
 import jax
 import optax
 import wandb
+from absl import logging
 from flax.core import FrozenDict
 from flax.training import checkpoints, train_state
 from jax import random
@@ -101,7 +102,7 @@ class Trainer:
 
         params = model.init(init_rngs, x_t, t, train=True)
         count = sum(x.size for x in jax.tree_leaves(params)) / 1e6
-        print(f"Parameter count: {count:.2f}M")
+        logging.info(f"Parameter count: {count:.2f}M")
 
         tx, self._lr_schedule = self._create_optimizer()
 
@@ -223,5 +224,5 @@ class Trainer:
         if self._state is None:
             self._state = self._create_train_state()
 
-        print(f"Restoring from {ckpt_dir}")
         self._state = checkpoints.restore_checkpoint(ckpt_dir=path, target=self._state)
+        logging.info(f"Restored checkpoint from {path}")
