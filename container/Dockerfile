@@ -10,7 +10,7 @@ RUN apt-get -y update && \
     add-apt-repository ppa:deadsnakes/ppa && \
     apt-get install -y python3.7 python3.7-distutils python3-pip && \
     apt-get install -y --no-install-recommends \
-    wget bash openssh-server git unzip neovim && \
+    wget bash openssh-server git unzip neovim tmux && \
     apt-get clean && \
     ln -sf python3.7 /usr/bin/python && \
     ln -sf pip3 /usr/bin/pip
