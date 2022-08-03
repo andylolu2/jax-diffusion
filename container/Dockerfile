@@ -1,26 +1,30 @@
 FROM nvidia/cuda:11.6.2-cudnn8-devel-ubuntu20.04
 
 # disable prompts from tzinfo
-ARG DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive \
+    SHELL=/bin/bash
 
-# install python and pip
+# install python, pip and other os dependencies
 RUN apt-get -y update && \
     apt-get install -y software-properties-common && \
-    add-apt-repository ppa:deadsnakes/ppa
-RUN apt install python3.7 python3.7-distutils python3-pip -y && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get install -y python3.7 python3.7-distutils python3-pip && \
+    apt-get install -y --no-install-recommends \
+    wget bash openssh-server git unzip neovim && \
+    apt-get clean && \
     ln -sf python3.7 /usr/bin/python && \
     ln -sf pip3 /usr/bin/pip
 
-# add user
-ARG USER=jax
-RUN useradd -ms /bin/bash ${USER}
-USER ${USER}
-WORKDIR /home/${USER}
-ENV PATH="/home/${USER}/.local/bin:${PATH}"
+# change dir
+WORKDIR /root
 
 # install dependencies
 RUN python -m pip install --no-cache-dir -U pip && \
     python -m pip install --no-cache-dir "jax[cuda]" \
     -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-COPY requirements.txt .
+ADD requirements.txt .
 RUN python -m pip install --no-cache-dir -r requirements.txt
+
+# start script
+ADD --chmod=755 container/start.sh .
+CMD [ "./start.sh" ]
