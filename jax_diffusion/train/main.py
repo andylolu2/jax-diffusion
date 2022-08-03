@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import tensorflow as tf
@@ -46,6 +47,8 @@ def setup(config: Config):
 def main(config: Config, dry_run: bool):
     config.dry_run = dry_run
     config = FrozenConfigDict(config)  # needed to be hashable
+
+    logging.info(config)
 
     # main loop
     with wandb_run(config):
