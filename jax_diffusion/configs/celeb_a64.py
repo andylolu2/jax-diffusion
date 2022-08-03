@@ -5,7 +5,7 @@ from jax_diffusion.types import Config
 def get_config() -> Config:
     config = get_base_config()
 
-    config.effective_steps = 50000
+    config.effective_steps = 40000
 
     exp_conf = config.experiment_kwargs.config
     exp_conf.dataset_kwargs.name = "celeb_a"
