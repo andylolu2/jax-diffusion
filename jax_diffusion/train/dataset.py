@@ -128,6 +128,7 @@ if __name__ == "__main__":
         resize_dim=64,
         data_dir=str(Path.home() / "tensorflow_datasets"),
         prefetch="auto",
+        map_calls="auto",
         seed=0,
     )
 
