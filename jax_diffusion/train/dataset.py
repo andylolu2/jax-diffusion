@@ -52,6 +52,7 @@ def load(
     resize_dim: int,
     data_dir: str,
     prefetch: int | str,
+    map_calls: int | str,
     batch_size: int,
     repeat: bool = False,
     shuffle: bool = False,
@@ -69,15 +70,15 @@ def load(
     )
     assert isinstance(ds, tf.data.Dataset)
 
-    preprocess = partial(preprocess_image, name, resize_dim)
-    ds = ds.map(preprocess)
-
     if shuffle:
         assert seed is not None
         assert buffer_size is not None
         ds = ds.shuffle(buffer_size=buffer_size, seed=seed)
     if repeat:
         ds = ds.repeat()
+
+    preprocess = partial(preprocess_image, name, resize_dim)
+    ds = ds.map(preprocess, AUTOTUNE if map_calls == "auto" else map_calls)
 
     ds = ds.batch(batch_size, drop_remainder=True)
     ds = ds.prefetch(AUTOTUNE if prefetch == "auto" else prefetch)

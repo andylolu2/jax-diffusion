@@ -35,6 +35,7 @@ def get_config() -> Config:
                     name="mnist",
                     resize_dim=32,
                     data_dir=str(Path.home() / "tensorflow_datasets"),
+                    map_calls="auto",
                     prefetch="auto",
                     seed=seed,
                 ),
