@@ -13,6 +13,6 @@ def get_config() -> Config:
     exp_conf.dataset_kwargs.resize_dim = 32
     exp_conf.train.dataset_kwargs.batch_size = 64
     exp_conf.model.unet_kwargs.dim_init = 32
-    exp_conf.model.unet_kwargs.dim_mults = (1, 1, 2, 2, 2)
+    exp_conf.model.unet_kwargs.dim_mults = (1, 2, 2, 2)
 
     return config
