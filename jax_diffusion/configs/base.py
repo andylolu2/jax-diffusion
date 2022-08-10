@@ -71,7 +71,10 @@ def get_config() -> Config:
                         batch_size=64,
                         subset="20%",
                     ),
-                    gen_samples=4,
+                    sample_kwargs=dict(
+                        num=4,
+                        steps=100,
+                    ),
                 ),
                 diffusion=dict(
                     T=1000,

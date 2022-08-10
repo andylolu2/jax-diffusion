@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any, Dict
 
 import jax
+import jax.numpy as jnp
+import numpy as np
 import optax
 import wandb
 from absl import logging
@@ -13,7 +15,7 @@ from flax.core import FrozenDict
 from flax.training import checkpoints, train_state
 from jax import random
 
-from jax_diffusion.diffusion import backward_process, forward_random
+from jax_diffusion.diffusion import Diffuser
 from jax_diffusion.model import UNet
 from jax_diffusion.train import dataset, lr_schedules, optimizers
 from jax_diffusion.types import Batch, Config, Params, Rng, ndarray
@@ -38,6 +40,7 @@ class Trainer:
     def __init__(self, rng: Rng, config: Config):
         self._init_rng = rng
         self._config = config
+        self._diffuser = Diffuser(self._forward_fn, config.diffusion)
 
         # Initialized at self._initialize_train()
         self._state: TrainState | None = None
@@ -85,23 +88,47 @@ class Trainer:
             for k, v in m.items():
                 metrics[k] = metrics[k] * (i / (i + 1)) + v / (i + 1)
 
-        generated = self.sample(num=self._config.eval.gen_samples, rng=rng)
-        image = image_grid(generated)
+        generated = self.sample(**self._config.eval.sample_kwargs, rng=rng)
+        image = image_grid(np.asarray(generated))
         metrics["sample"] = wandb.Image(image)
 
         return metrics
 
+    def sample(self, num: int, steps: int, rng: Rng):
+        x = self._sample_batch["image"]
+        shape = (num,) + x.shape[1:]
+
+        x_T = random.normal(rng, shape, dtype=x.dtype)
+        x_0 = self._diffuser.ddim_backward(self._state.ema_params, x_T, steps)
+        return x_0
+
+    def save_checkpoint(self, ckpt_dir: str):
+        checkpoints.save_checkpoint(
+            ckpt_dir=ckpt_dir,
+            target=self._state,
+            step=self._state.step,
+            keep=1,
+        )
+
+    def restore_checkpoint(self, ckpt_dir: str):
+        path = Path(ckpt_dir)
+        assert path.is_dir() or path.is_file()
+
+        if self._state is None:
+            self._state = self._create_train_state()
+
+        self._state = checkpoints.restore_checkpoint(ckpt_dir=path, target=self._state)
+        logging.info(f"Restored checkpoint from {path}")
+
     def _create_train_state(self):
         rng_diffusion, rng_param, rng_dropout = random.split(self._init_rng, 3)
 
-        model = UNet(**self._config.model.unet_kwargs)
-        x_t, t, _ = forward_random(
-            self._config.diffusion, self._sample_batch["image"], rng_diffusion
-        )
+        x_t, t, _ = self._diffuser.forward(self._sample_batch["image"], rng_diffusion)
         init_rngs = {"params": rng_param, "dropout": rng_dropout}
-
+        model = UNet(**self._config.model.unet_kwargs)
         params = model.init(init_rngs, x_t, t, train=True)
-        count = sum(x.size for x in jax.tree_leaves(params)) / 1e6
+
+        count = sum(x.size for x in jax.tree_util.tree_leaves(params)) / 1e6
         logging.info(f"Parameter count: {count:.2f}M")
 
         tx, self._lr_schedule = self._create_optimizer()
@@ -123,6 +150,10 @@ class Trainer:
         rng: Rng | None = None,
     ):
         rngs = {"dropout": rng} if rng is not None else None
+
+        if t.size == 1:
+            t = jnp.full((len(image), 1), t, dtype=image.dtype)
+
         assert self._state is not None
         return self._state.apply_fn(params, image, t, train, rngs=rngs)
 
@@ -151,33 +182,17 @@ class Trainer:
         rng1, rng2 = random.split(rng)
         grad_loss_fn = jax.grad(self._loss_fn, has_aux=True)
 
-        x_t, t, eps = forward_random(self._config.diffusion, inputs["image"], rng1)
+        x_t, t, eps = self._diffuser.forward(inputs["image"], rng1)
         grads, metrics = grad_loss_fn(state.params, x_t, t, eps, rng2)
         state = state.apply_gradients(grads=grads)
         return state, metrics
 
     @partial(jax.jit, static_argnums=(0,))
     def _eval_fn(self, state: TrainState, inputs: Batch, rng: Rng):
-        x_t, t, eps = forward_random(self._config.diffusion, inputs["image"], rng)
+        x_t, t, eps = self._diffuser.forward(inputs["image"], rng)
         pred = self._forward_fn(state.ema_params, x_t, t, train=False)
         metrics = self._compute_metrics(pred, eps)
         return metrics
-
-    def sample(self, num: int, rng: Rng):
-        x_ = self._sample_batch["image"]
-        shape = (num,) + x_.shape[1:]
-
-        rng1, rng2 = jax.random.split(rng)
-        x_0 = backward_process(
-            diffusion_config=self._config.diffusion,
-            eps_fn=self._forward_fn,
-            params=self._state.ema_params,
-            x_t=jax.random.normal(rng1, shape=shape, dtype=x_.dtype),
-            T=self._config.diffusion.T,
-            steps=self._config.diffusion.T,
-            rng=rng2,
-        )
-        return x_0
 
     def _create_optimizer(self):
         op_config = self._config.train.optimizer
@@ -208,21 +223,3 @@ class Trainer:
             **self._config.eval.dataset_kwargs,
             **self._config.dataset_kwargs,
         )
-
-    def save_checkpoint(self, ckpt_dir: str):
-        checkpoints.save_checkpoint(
-            ckpt_dir=ckpt_dir,
-            target=self._state,
-            step=self._state.step,
-            keep=1,
-        )
-
-    def restore_checkpoint(self, ckpt_dir: str):
-        path = Path(ckpt_dir)
-        assert path.is_dir() or path.is_file()
-
-        if self._state is None:
-            self._state = self._create_train_state()
-
-        self._state = checkpoints.restore_checkpoint(ckpt_dir=path, target=self._state)
-        logging.info(f"Restored checkpoint from {path}")

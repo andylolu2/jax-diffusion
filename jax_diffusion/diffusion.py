@@ -1,92 +1,116 @@
 from __future__ import annotations
 
-from functools import lru_cache, partial
+from functools import partial
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 from jax import random
 
 from jax_diffusion.types import Config, Params, Rng, ndarray
 
 
-def forward_process(diffusion_config: Config, x_0: ndarray, t: ndarray, rng: Rng):
-    """See algorithm 1 in https://arxiv.org/pdf/2006.11239.pdf"""
-    alpha_t_bar = jnp.asarray(alpha_bars(**diffusion_config))[t]
-    alpha_t_bar = jnp.expand_dims(alpha_t_bar, tuple(range(1, x_0.ndim)))
+class Diffuser:
+    def __init__(self, eps_fn, diffusion_config: Config):
+        self.eps_fn = eps_fn
+        self.config = diffusion_config
+        self.betas = jnp.asarray(self._betas(**diffusion_config))
+        self.alphas = jnp.asarray(self._alphas(self.betas))
+        self.alpha_bars = jnp.asarray(self._alpha_bars(self.alphas))
 
-    eps = jax.random.normal(rng, shape=x_0.shape, dtype=x_0.dtype)
-    x_t = (alpha_t_bar**0.5) * x_0 + ((1 - alpha_t_bar) ** 0.5) * eps
-    return x_t, eps
+    @property
+    def steps(self) -> int:
+        return self.config.T
 
+    def timesteps(self, steps: int):
+        timesteps = jnp.arange(0, self.steps, self.steps // steps)
+        timesteps = timesteps.at[-1].set(self.steps - 1)
+        return timesteps[::-1]
 
-def forward_random(diffusion_config: Config, x_0: ndarray, rng: Rng):
-    rng1, rng2 = random.split(rng)
-    t = jax.random.randint(rng1, (len(x_0),), 0, diffusion_config.T)
-    x_t, eps = forward_process(diffusion_config, x_0, t, rng2)
-    t = t.astype(x_t.dtype)[:, None]
-    return x_t, t, eps
+    @partial(jax.jit, static_argnums=(0,))
+    def forward(self, x_0: ndarray, rng: Rng):
+        """See algorithm 1 in https://arxiv.org/pdf/2006.11239.pdf
 
+        This function should be `jax.jit`-ed.
+        """
+        rng1, rng2 = random.split(rng)
+        t = random.randint(rng1, (len(x_0), 1), 0, self.steps)
+        x_t, eps = self.sample_q(x_0, t, rng2)
+        t = t.astype(x_t.dtype)
+        return x_t, t, eps
 
-@partial(jax.jit, static_argnums=(0, 1))
-def backward_process(
-    diffusion_config: Config,
-    eps_fn,
-    params: Params,
-    x_t: ndarray,
-    T: int,
-    steps: int,
-    rng: random.KeyArray,
-):
-    """See algorithm 2 in https://arxiv.org/pdf/2006.11239.pdf"""
-    init_val = {"x": x_t, "rng": rng}
-    a = jnp.asarray(alphas(**diffusion_config))
-    a_bar = jnp.asarray(alpha_bars(**diffusion_config))
-    b = jnp.asarray(betas(**diffusion_config))
+    def sample_q(self, x_0: ndarray, t: ndarray, rng: Rng):
+        """Samples x_t given x_0 by the q(x_t|x_0) formula."""
+        # (bs, 1)
+        alpha_t_bar = self.alpha_bars[t]
+        # (bs, 1, 1, 1)
+        alpha_t_bar = jnp.expand_dims(alpha_t_bar, (1, 2))
 
-    def body_fun(i: int, val):
-        x, rng = val["x"], val["rng"]
-        t = T - i - 1
-        alpha_t = a[t]
-        alpha_t_bar = a_bar[t]
-        sigma_t = b[t] ** 0.5
+        eps = random.normal(rng, shape=x_0.shape, dtype=x_0.dtype)
+        x_t = (alpha_t_bar**0.5) * x_0 + ((1 - alpha_t_bar) ** 0.5) * eps
+        return x_t, eps
 
-        rng, rng_next = jax.random.split(rng)
-        z = jax.lax.cond(
-            pred=t > 0,
-            true_fun=lambda: jax.random.normal(rng, shape=x.shape, dtype=x.dtype),
-            false_fun=lambda: jnp.zeros_like(x),
-        )
+    @partial(jax.jit, static_argnums=(0,))
+    def ddpm_backward_step(self, params: Params, x_t: ndarray, t: int, rng: Rng):
+        """See algorithm 2 in https://arxiv.org/pdf/2006.11239.pdf"""
+        alpha_t = self.alphas[t]
+        alpha_t_bar = self.alpha_bars[t]
+        sigma_t = self.betas[t] ** 0.5
 
-        t_input = jnp.full((x.shape[0], 1), t, dtype=x.dtype)
-        eps = eps_fn(params, x, t_input, train=False)
+        z = (t > 0) * random.normal(rng, shape=x_t.shape, dtype=x_t.dtype)
+        eps = self.eps_fn(params, x_t, t, train=False)
 
         x = (1 / alpha_t**0.5) * (
-            x - ((1 - alpha_t) / (1 - alpha_t_bar) ** 0.5) * eps
+            x_t - ((1 - alpha_t) / (1 - alpha_t_bar) ** 0.5) * eps
         ) + sigma_t * z
 
-        return {"x": x, "rng": rng_next}
+        return x
 
-    x = jax.lax.fori_loop(
-        lower=0,
-        upper=steps,
-        body_fun=body_fun,
-        init_val=init_val,
-    )["x"]
+    def ddpm_backward(self, params: Params, x_T: ndarray, rng: Rng) -> ndarray:
+        x = x_T
 
-    return x
+        for t in range(self.steps - 1, -1, -1):
+            rng, rng_ = random.split(rng)
+            x = self.ddpm_backward_step(params, x, t, rng_)
 
+        return x
 
-@lru_cache(maxsize=1)
-def betas(beta_1: float, beta_T: float, T: int):
-    return np.linspace(beta_1, beta_T, T, dtype=np.float32)
+    @partial(jax.jit, static_argnums=(0,))
+    def ddim_backward_step(
+        self, params: Params, x_t: ndarray, t: ndarray, t_next: ndarray
+    ):
+        """See section 4.1 and C.1 in https://arxiv.org/pdf/2010.02502.pdf"""
+        alpha_t = self.alphas[t]
+        alpha_t_next = self.alphas[t_next]
 
+        eps = self.eps_fn(params, x_t, t, train=False)
 
-@lru_cache(maxsize=1)
-def alphas(beta_1: float, beta_T: float, T: int):
-    return 1 - betas(beta_1, beta_T, T)
+        x_0 = (x_t - (1 - alpha_t) ** 0.5 * eps) / alpha_t**0.5
+        x_t_direction = (1 - alpha_t_next) ** 0.5 * eps
+        x_t_next = alpha_t_next**0.5 * x_0 + x_t_direction
 
+        return x_t_next
 
-@lru_cache(maxsize=1)
-def alpha_bars(beta_1: float, beta_T: float, T: int):
-    return np.cumprod(alphas(beta_1, beta_T, T))
+    def ddim_backward(self, params: Params, x_T: ndarray, steps: int):
+        x = x_T
+
+        ts = self.timesteps(steps)
+        for t, t_next in zip(ts[:-1], ts[1:]):
+            x = self.ddim_backward_step(params, x, t, t_next)
+
+        return x
+
+    @classmethod
+    def _betas(cls, beta_1: float, beta_T: float, T: int) -> ndarray:
+        return jnp.linspace(beta_1, beta_T, T, dtype=jnp.float32)
+
+    @classmethod
+    def _alphas(cls, betas) -> ndarray:
+        return 1 - betas
+
+    @classmethod
+    def _alpha_bars(cls, alphas) -> ndarray:
+        return jnp.cumprod(alphas)
+
+    @staticmethod
+    def expand_t(t: int, x: ndarray):
+        return jnp.full((len(x), 1), t, dtype=x.dtype)
