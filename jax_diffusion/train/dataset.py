@@ -56,6 +56,7 @@ def load(
     batch_size: int,
     repeat: bool = False,
     shuffle: bool = False,
+    augment: bool = False,
     seed: int | None = None,
     buffer_size: int | None = None,
 ) -> Dataset:
@@ -77,16 +78,16 @@ def load(
     if repeat:
         ds = ds.repeat()
 
-    preprocess = partial(preprocess_image, name, resize_dim)
+    preprocess = partial(preprocess_image, name, resize_dim, augment)
     ds = ds.map(preprocess, AUTOTUNE if map_calls == "auto" else map_calls)
 
     ds = ds.batch(batch_size, drop_remainder=True)
     ds = ds.prefetch(AUTOTUNE if prefetch == "auto" else prefetch)
 
-    yield from tfds.as_numpy(ds)
+    yield from tfds.as_numpy(ds)  # type: ignore
 
 
-def preprocess_image(name: str, image_dim: int, sample):
+def preprocess_image(name: str, image_dim: int, augment: bool, sample):
     """Center crop and normalize"""
     image = sample["image"]
 
@@ -105,6 +106,8 @@ def preprocess_image(name: str, image_dim: int, sample):
     image = tf.image.resize(
         image, (image_dim, image_dim), tf.image.ResizeMethod.BICUBIC
     )
+    if augment:
+        image = tf.image.random_flip_left_right(image)
     assert image.dtype == tf.float32
 
     stats = DATASETS[name]
@@ -122,8 +125,6 @@ if __name__ == "__main__":
         train=True,
         batch_size=128,
         subset="100%",
-        shuffle=False,
-        repeat=False,
         name="celeb_a",
         resize_dim=64,
         data_dir=str(Path.home() / "tensorflow_datasets"),

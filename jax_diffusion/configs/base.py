@@ -46,6 +46,7 @@ def get_config() -> Config:
                         buffer_size=1000,
                         shuffle=True,
                         repeat=True,
+                        augment=True,
                     ),
                     ema_step_size=1 - 0.9995,
                     optimizer=dict(
