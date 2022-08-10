@@ -31,15 +31,25 @@ def setup(config: Config):
 
     # setup period actions
     periodic_actions = []
-    if not config.dry_run:
-        ckpt_dir = str(Path(config.ckpt_dir) / wandb.run.name)
-        periodic_actions += [
-            LogAction(interval=config.log_interval),
-            CheckpointAction(
-                interval=config.ckpt_interval, trainer=trainer, ckpt_dir=ckpt_dir
-            ),
-            EvalAction(interval=config.eval_interval, rng=eval_rng, trainer=trainer),
-        ]
+    ckpt_dir = "" if config.dry_run else str(Path(config.ckpt_dir) / wandb.run.name)
+    periodic_actions += [
+        LogAction(
+            interval=config.log_interval,
+            dry_run=config.dry_run,
+        ),
+        CheckpointAction(
+            config.ckpt_interval,
+            config.dry_run,
+            trainer=trainer,
+            ckpt_dir=ckpt_dir,
+        ),
+        EvalAction(
+            interval=config.eval_interval,
+            dry_run=config.dry_run,
+            rng=eval_rng,
+            trainer=trainer,
+        ),
+    ]
 
     return trainer, step_rng, periodic_actions
 
