@@ -196,7 +196,7 @@ class Trainer:
 
     def _create_optimizer(self):
         op_config = self._config.train.optimizer
-        lr_config = op_config.lr_schedule
+        lr_config = self._config.train.lr_schedule
 
         lr_schedule = lr_schedules.create_lr_schedule(
             lr_config.schedule_type,

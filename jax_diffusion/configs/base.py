@@ -55,16 +55,10 @@ def get_config() -> Config:
                             max_grad_norm=1.0,
                             grac_acc_steps=grad_acc,
                         ),
-                        lr_schedule=dict(
-                            schedule_type="cosine",
-                            kwargs=dict(
-                                init_value=0,
-                                peak_value=4e-4,
-                                warmup_steps=1000,
-                                decay_steps=steps * grad_acc,
-                                decay_factor=10,
-                            ),
-                        ),
+                    ),
+                    lr_schedule=dict(
+                        schedule_type="constant",
+                        kwargs=dict(value=1e-4),
                     ),
                 ),
                 eval=dict(
