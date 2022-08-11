@@ -22,8 +22,7 @@ class Diffuser:
         return self.config.T
 
     def timesteps(self, steps: int):
-        timesteps = jnp.arange(0, self.steps, self.steps // steps)
-        timesteps = timesteps.at[-1].set(self.steps - 1)
+        timesteps = jnp.rint(jnp.linspace(0, self.steps, steps + 1))
         return timesteps[::-1]
 
     @partial(jax.jit, static_argnums=(0,))
@@ -79,7 +78,7 @@ class Diffuser:
         self, params: Params, x_t: ndarray, t: ndarray, t_next: ndarray
     ):
         """See section 4.1 and C.1 in https://arxiv.org/pdf/2010.02502.pdf
-        
+
         Note: alpha in the DDIM paper is actually alpha_bar in DDPM paper
         """
         alpha_t = self.alpha_bars[t]
