@@ -19,7 +19,7 @@ def get_config() -> Config:
     exp_conf.eval.dataset_kwargs.subset = "40%"
 
 
-    exp_conf.model.unet_kwargs.dim_init = 32
+    exp_conf.model.unet_kwargs.dim_init = 48
     exp_conf.model.unet_kwargs.dim_mults = (1, 2, 2, 2)
 
     return config
