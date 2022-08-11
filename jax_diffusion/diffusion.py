@@ -22,7 +22,8 @@ class Diffuser:
         return self.config.T
 
     def timesteps(self, steps: int):
-        timesteps = jnp.rint(jnp.linspace(0, self.steps, steps + 1))
+        timesteps = jnp.linspace(0, self.steps, steps + 1)
+        timesteps = jnp.rint(timesteps).astype(jnp.int32)
         return timesteps[::-1]
 
     @partial(jax.jit, static_argnums=(0,))
