@@ -14,6 +14,10 @@ def get_config() -> Config:
     exp_conf.dataset_kwargs.name = "mnist"
     exp_conf.dataset_kwargs.resize_dim = 32
     exp_conf.train.dataset_kwargs.batch_size = 128
+    exp_conf.train.dataset_kwargs.augment = False
+    exp_conf.eval.dataset_kwargs.batch_size = 128
+    exp_conf.eval.dataset_kwargs.subset = "40%"
+
 
     exp_conf.model.unet_kwargs.dim_init = 32
     exp_conf.model.unet_kwargs.dim_mults = (1, 2, 2, 2)
