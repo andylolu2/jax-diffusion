@@ -25,7 +25,7 @@ def setup(config: Config):
 
     # setup trainer
     trainer = Trainer(init_rng, **config.experiment_kwargs)
-    if config.restore is not None:
+    if config.restore != "":
         trainer.restore_checkpoint(config.restore)
 
     # setup period actions

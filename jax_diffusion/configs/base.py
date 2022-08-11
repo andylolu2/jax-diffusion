@@ -10,7 +10,7 @@ def get_config() -> Config:
     config = ConfigDict()
 
     config.project_name = "jax-diffusion"
-    config.restore = None
+    config.restore = ""
     config.dry_run = False
     config.log_level = logging.INFO
 
