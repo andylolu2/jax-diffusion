@@ -78,9 +78,12 @@ class Diffuser:
     def ddim_backward_step(
         self, params: Params, x_t: ndarray, t: ndarray, t_next: ndarray
     ):
-        """See section 4.1 and C.1 in https://arxiv.org/pdf/2010.02502.pdf"""
-        alpha_t = self.alphas[t]
-        alpha_t_next = self.alphas[t_next]
+        """See section 4.1 and C.1 in https://arxiv.org/pdf/2010.02502.pdf
+        
+        Note: alpha in the DDIM paper is actually alpha_bar in DDPM paper
+        """
+        alpha_t = self.alpha_bars[t]
+        alpha_t_next = self.alpha_bars[t_next]
 
         eps = self.eps_fn(params, x_t, t, train=False)
 
