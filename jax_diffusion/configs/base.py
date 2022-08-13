@@ -50,9 +50,8 @@ def get_config() -> Config:
                     ),
                     ema_step_size=1 - 0.9995,
                     optimizer=dict(
-                        optimizer_type="adamw",
+                        optimizer_type="adam",
                         kwargs=dict(
-                            weight_decay=0.01,
                             max_grad_norm=1.0,
                             grac_acc_steps=grad_acc,
                         ),

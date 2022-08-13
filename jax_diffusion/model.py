@@ -86,7 +86,7 @@ class Block(nn.Module):
 
     @nn.compact
     def __call__(self, x, deterministic: bool, *, scale_shift=None):
-        x = nn.GroupNorm(self.num_groups, dtype=self.dtype, epsilon=1e-4)(x)
+        x = nn.GroupNorm(self.num_groups, dtype=self.dtype)(x)
         x = nn.silu(x)
         x = nn.Dropout(rate=self.dropout)(x, deterministic)
         x = nn.Conv(
@@ -155,7 +155,7 @@ class ResidualAttentionBlock(nn.Module):
 
         res = x
         b, w, h, d = res.shape
-        res = nn.GroupNorm(self.num_groups, dtype=self.dtype, epsilon=1e-4)(res)
+        res = nn.GroupNorm(self.num_groups, dtype=self.dtype)(res)
         res = jnp.reshape(res, (b, w * h, d))
         res = nn.SelfAttention(num_heads=self.num_heads, dtype=self.dtype)(res)
         res = jnp.reshape(res, (b, w, h, self.dim))
