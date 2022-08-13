@@ -53,8 +53,7 @@ def setup(config: Config):
     return trainer, step_rng, periodic_actions
 
 
-def main(config: Config, dry_run: bool):
-    config.dry_run = dry_run
+def main(config: Config):
     config = FrozenConfigDict(config)  # needed to be hashable
 
     logging.info(config)
