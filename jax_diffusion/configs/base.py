@@ -88,6 +88,7 @@ def get_config() -> Config:
                         kernel_size=3,
                         num_groups=4,
                         dropout=0.1,
+                        dtype="fp32",
                     ),
                 ),
             )

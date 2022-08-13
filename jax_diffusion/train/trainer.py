@@ -123,7 +123,8 @@ class Trainer:
     def _create_train_state(self):
         rng_diffusion, rng_param, rng_dropout = random.split(self._init_rng, 3)
 
-        x_t, t, _ = self._diffuser.forward(self._sample_batch["image"], rng_diffusion)
+        x_0 = self._sample_batch["image"]
+        x_t, t, _ = self._diffuser.forward(x_0, rng_diffusion)
         init_rngs = {"params": rng_param, "dropout": rng_dropout}
         model = UNet(**self._config.model.unet_kwargs)
         params = model.init(init_rngs, x_t, t, train=True)
@@ -182,7 +183,8 @@ class Trainer:
         rng1, rng2 = random.split(rng)
         grad_loss_fn = jax.grad(self._loss_fn, has_aux=True)
 
-        x_t, t, eps = self._diffuser.forward(inputs["image"], rng1)
+        x_0 = inputs["image"]
+        x_t, t, eps = self._diffuser.forward(x_0, rng1)
         grads, metrics = grad_loss_fn(state.params, x_t, t, eps, rng2)
         state = state.apply_gradients(grads=grads)
         return state, metrics

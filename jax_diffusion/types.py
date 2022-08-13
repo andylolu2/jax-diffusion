@@ -10,6 +10,7 @@ from absl.flags import FlagValues
 from typing_extensions import TypedDict
 
 ndarray = Union[jnp.ndarray, np.ndarray]
+Dtype = Any
 Rng = jax.random.KeyArray
 Params = optax.Params
 Config = Any
