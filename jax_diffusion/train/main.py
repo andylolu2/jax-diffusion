@@ -30,7 +30,7 @@ def setup(config: Config):
 
     # setup period actions
     periodic_actions = []
-    ckpt_dir = "" if config.dry_run else str(Path(config.ckpt_dir) / wandb.run.name)
+    ckpt_dir = "" if config.dry_run else f"{config.ckpt_dir}/{wandb.run.name}"
     periodic_actions += [
         LogAction(
             interval=config.log_interval,

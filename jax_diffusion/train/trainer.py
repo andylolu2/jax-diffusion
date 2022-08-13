@@ -41,6 +41,7 @@ class Trainer:
         self._init_rng = rng
         self._config = config
         self._diffuser = Diffuser(self._forward_fn, config.diffusion)
+        self._am = checkpoints.AsyncManager()
 
         # Initialized at self._initialize_train()
         self._state: TrainState | None = None
@@ -108,6 +109,7 @@ class Trainer:
             target=self._state,
             step=self._state.step,
             keep=1,
+            async_manager=self._am,
         )
 
     def restore_checkpoint(self, ckpt_dir: str):

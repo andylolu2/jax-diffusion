@@ -22,7 +22,7 @@ def get_config() -> Config:
     config.seed = seed
     config.effective_steps = steps
     config.steps = steps * grad_acc
-    config.ckpt_dir = str(Path.cwd() / "checkpoints")
+    config.ckpt_dir = "gs://jax-diffusion-checkpoints"
     config.log_interval = 1
     config.ckpt_interval = 60
     config.eval_interval = 180
