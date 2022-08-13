@@ -6,8 +6,8 @@ def get_config() -> Config:
     config = get_base_config()
 
     config.effective_steps = 50000
-    config.ckpt_interval = 60
-    config.eval_interval = 60
+    config.ckpt_interval = 120
+    config.eval_interval = 120
 
     exp_conf = config.experiment_kwargs.config
 
@@ -17,7 +17,6 @@ def get_config() -> Config:
     exp_conf.train.dataset_kwargs.augment = False
     exp_conf.eval.dataset_kwargs.batch_size = 128
     exp_conf.eval.dataset_kwargs.subset = "40%"
-
 
     exp_conf.model.unet_kwargs.dim_init = 48
     exp_conf.model.unet_kwargs.dim_mults = (1, 2, 2, 2)
