@@ -5,7 +5,7 @@ from jax_diffusion.types import Config
 def get_config() -> Config:
     config = get_base_config()
 
-    config.effective_steps = 50000
+    config.effective_steps = 100000
     config.ckpt_interval = 180
     config.eval_interval = 180
 
