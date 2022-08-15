@@ -3,13 +3,15 @@ import math
 import numpy as np
 
 
-def _normalize(x: np.ndarray, *, low: float = 0.0, high: float):
-    lo = x.min()
-    hi = x.max()
+def _normalize(
+    x: np.ndarray, *, quantiles=(0.01, 0.99), range_=(0, 255), dtype=np.uint8
+):
+    lo, hi = np.quantile(x, quantiles[0]), np.quantile(x, quantiles[1])
 
+    x = np.clip(x, lo, hi)
     x = (x - lo) / (hi - lo)
-    x = (x + low) * (high - low)
-    return x
+    x = (x + range_[0]) * (range_[1] - range_[0])
+    return x.astype(dtype)
 
 
 def image_grid(x: np.ndarray):
@@ -20,14 +22,14 @@ def image_grid(x: np.ndarray):
         x (np.ndarray): Batch of images of shape `[batch_size, height, width, channel]`
         ncols (int): Number of columns in the image grid.
     """
-    x = _normalize(x, low=0, high=255).astype(np.uint8)
+    x = _normalize(x)
 
     (b, h, w, c) = x.shape
     ncols = math.ceil(b**0.5)
     width = w * ncols
     height = h * math.ceil(b / ncols)
 
-    grid = np.zeros((height, width, c))
+    grid = np.zeros((height, width, c), dtype=np.uint8)
 
     for i in range(b):
         x_offset = w * (i % ncols)
