@@ -19,7 +19,12 @@ Unofficial implementation of
 
 ## Fashion MNIST
 
-> Work in progress!
+| Real      | Generated |
+| --------- | --------- |
+| ![img][5] | ![img][6] |
+
+[5]: https://user-images.githubusercontent.com/66584117/185258572-a51e78aa-8296-471e-b5e7-4049f541134b.png
+[6]: https://user-images.githubusercontent.com/66584117/185258584-7c607a35-351c-4e78-b918-acae6c7ce10b.png
 
 ## Celeb A
 
