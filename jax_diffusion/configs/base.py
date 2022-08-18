@@ -79,7 +79,7 @@ def get_config() -> Config:
                 model=dict(
                     unet_kwargs=dict(
                         dim_init=d_model,
-                        dim_mults=(1, 1, 2, 2, 2),
+                        dim_mults=(1, 2, 2, 2),
                         attention_resolutions=(16,),
                         attention_num_heads=4,
                         num_res_blocks=2,
