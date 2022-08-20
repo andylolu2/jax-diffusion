@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import tensorflow as tf
 import wandb
 from absl import logging
@@ -29,9 +27,8 @@ def setup(config: Config):
         trainer.restore_checkpoint(config.restore)
 
     # setup period actions
-    periodic_actions = []
-    ckpt_dir = "" if config.dry_run else f"{config.ckpt_dir}/{wandb.run.name}"
-    periodic_actions += [
+    ckpt_dir = f"{config.ckpt_dir}/{wandb.run.name}"
+    periodic_actions = [
         LogAction(
             interval=config.log_interval,
             dry_run=config.dry_run,
