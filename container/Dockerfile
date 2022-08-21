@@ -12,7 +12,7 @@ RUN apt-get -y update && \
         /etc/apt/sources.list.d/google-cloud-sdk.list && \
     curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add - && \
     apt-get -y update && \
-    apt-get install -y --no-install-recommends \
+    apt-get install -y \
         apt-transport-https \
         bash \
         ca-certificates \
