@@ -13,6 +13,6 @@ def get_config() -> Config:
     exp_conf.dataset_kwargs.name = "mnist"
     exp_conf.dataset_kwargs.resize_dim = 32
     exp_conf.model.unet_kwargs.dim_init = 4
-    exp_conf.model.unet_kwargs.dim_mults = (1, 1, 1, 1, 1)
+    exp_conf.model.unet_kwargs.dim_mults = (1, 1, 1, 1)
 
     return config
