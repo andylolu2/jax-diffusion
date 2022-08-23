@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Collection, Sequence
+from typing import Any, Collection, Sequence
 
 import flax.linen as nn
 import jax.numpy as jnp
@@ -179,29 +179,32 @@ class UNet(nn.Module):
     num_groups: int
     dropout: float
 
-    dtype: str
+    dtype: Dtype
 
     @nn.compact
     def __call__(self, x, time, train: bool):
         channels = x.shape[-1]
-        dtype = jnp.float16 if self.dtype == "fp16" else jnp.float32
 
         res = partial(
             ResnetBlock,
             kernel_size=self.kernel_size,
             num_groups=self.num_groups,
             dropout=self.dropout,
-            dtype=dtype,
+            dtype=self.dtype,
         )
         res_atten = partial(
             ResidualAttentionBlock,
             num_heads=self.attention_num_heads,
             num_groups=self.num_groups,
-            dtype=dtype,
+            dtype=self.dtype,
         )
 
-        t = TimeEmbedding(self.time_embed_dim, self.sinusoidal_embed_dim, dtype)(time)
-        x = nn.Conv(self.dim_init, (self.kernel_size, self.kernel_size), dtype=dtype)(x)
+        t = TimeEmbedding(self.time_embed_dim, self.sinusoidal_embed_dim, self.dtype)(
+            time
+        )
+        x = nn.Conv(
+            self.dim_init, (self.kernel_size, self.kernel_size), dtype=self.dtype
+        )(x)
 
         hs = [x]
         # downsample
@@ -218,7 +221,7 @@ class UNet(nn.Module):
                 hs.append(x)
 
             if not is_last:
-                x = DownSample(dim, self.kernel_size, dtype)(x)
+                x = DownSample(dim, self.kernel_size, self.dtype)(x)
                 hs.append(x)
 
         # middle
@@ -241,11 +244,11 @@ class UNet(nn.Module):
                     x = res_atten(dim)(x)
 
             if not is_last:
-                x = UpSample(dim, self.kernel_size, dtype)(x)
+                x = UpSample(dim, self.kernel_size, self.dtype)(x)
 
         assert not hs
 
         # final
         x = res(self.dim_init)(x, not train, time_emb=t)
-        x = nn.Conv(channels, kernel_size=(1, 1), dtype=dtype)(x)
+        x = nn.Conv(channels, kernel_size=(1, 1), dtype=self.dtype)(x)
         return x

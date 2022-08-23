@@ -41,7 +41,21 @@ class Trainer:
         self._init_rng = rng
         self._config = config
         self._diffuser = Diffuser(self._forward_fn, config.diffusion)
+
         self._am = checkpoints.AsyncManager()
+        self._n_devices = jax.local_device_count()
+        platform = jax.local_devices()[0].platform
+        if config.half_precision:
+            if platform == "tpu":
+                self._dtype = jnp.bfloat16
+            else:
+                self._dtype = jnp.float16
+        else:
+            self._dtype = jnp.float32
+
+        logging.info(f"Device count: {self._n_devices}")
+        logging.info(f"Running on platform: {platform}")
+        logging.info(f"Using data type: {self._dtype}")
 
         # Initialized at self._initialize_train()
         self._state: TrainState | None = None
@@ -72,7 +86,10 @@ class Trainer:
         assert self._train_input is not None
         assert self._state is not None
         inputs = next(self._train_input)
+        logging.info(f"inputs: {jax.tree_util.tree_map(lambda x: x.shape, inputs)}")
         self._state, metrics = self._update_fn(self._state, inputs, rng)
+        logging.info(f"state: {jax.tree_util.tree_map(lambda x: x.shape, self._state)}")
+        logging.info(f"metrics: {jax.tree_util.tree_map(lambda x: x.shape, metrics)}")
 
         meta = self._metadata()
         metrics.update(meta)
@@ -127,8 +144,10 @@ class Trainer:
 
         x_0 = self._sample_batch["image"]
         x_t, t, _ = self._diffuser.forward(x_0, rng_diffusion)
+        logging.info(f"x_t: {x_t.shape}")
+        model = UNet(**self._config.model.unet_kwargs, dtype=self._dtype)
+
         init_rngs = {"params": rng_param, "dropout": rng_dropout}
-        model = UNet(**self._config.model.unet_kwargs)
         params = model.init(init_rngs, x_t, t, train=True)
 
         count = sum(x.size for x in jax.tree_util.tree_leaves(params)) / 1e6
@@ -180,8 +199,9 @@ class Trainer:
         meta["learning_rate"] = self._lr_schedule(self.global_step)
         return meta
 
-    @partial(jax.jit, static_argnums=(0,))
+    @partial(jax.pmap, static_broadcasted_argnums=(0,), in_axes=(None, None, 0, None))
     def _update_fn(self, state: TrainState, inputs: Batch, rng: Rng):
+        logging.info(f"inputs: {jax.tree_util.tree_map(lambda x: x.shape, inputs)}")
         rng1, rng2 = random.split(rng)
         grad_loss_fn = jax.grad(self._loss_fn, has_aux=True)
 
@@ -189,9 +209,11 @@ class Trainer:
         x_t, t, eps = self._diffuser.forward(x_0, rng1)
         grads, metrics = grad_loss_fn(state.params, x_t, t, eps, rng2)
         state = state.apply_gradients(grads=grads)
+        logging.info(f"state: {jax.tree_util.tree_map(lambda x: x.shape, state)}")
+        logging.info(f"metrics: {jax.tree_util.tree_map(lambda x: x.shape, metrics)}")
         return state, metrics
 
-    @partial(jax.jit, static_argnums=(0,))
+    @partial(jax.pmap, static_broadcasted_argnums=(0,))
     def _eval_fn(self, state: TrainState, inputs: Batch, rng: Rng):
         x_t, t, eps = self._diffuser.forward(inputs["image"], rng)
         pred = self._forward_fn(state.ema_params, x_t, t, train=False)
@@ -217,6 +239,7 @@ class Trainer:
     def _build_train_input(self):
         return dataset.load(
             train=True,
+            n_devices=self._n_devices,
             **self._config.train.dataset_kwargs,
             **self._config.dataset_kwargs,
         )
@@ -224,6 +247,7 @@ class Trainer:
     def _build_eval_input(self):
         return dataset.load(
             train=False,
+            n_devices=self._n_devices,
             **self._config.eval.dataset_kwargs,
             **self._config.dataset_kwargs,
         )
