@@ -23,7 +23,7 @@ def get_config() -> Config:
     config.effective_steps = steps
     config.steps = steps * grad_acc
     config.ckpt_dir = "gs://jax-diffusion-checkpoints"
-    config.log_interval = 1
+    config.log_interval = 100
     config.ckpt_interval = 60
     config.eval_interval = 180
 
