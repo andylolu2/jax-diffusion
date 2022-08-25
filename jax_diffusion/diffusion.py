@@ -28,10 +28,7 @@ class Diffuser:
 
     @partial(jax.jit, static_argnums=(0,))
     def forward(self, x_0: ndarray, rng: Rng):
-        """See algorithm 1 in https://arxiv.org/pdf/2006.11239.pdf
-
-        This function should be `jax.jit`-ed.
-        """
+        """See algorithm 1 in https://arxiv.org/pdf/2006.11239.pdf"""
         rng1, rng2 = random.split(rng)
         t = random.randint(rng1, (len(x_0), 1), 0, self.steps)
         x_t, eps = self.sample_q(x_0, t, rng2)

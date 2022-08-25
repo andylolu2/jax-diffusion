@@ -5,7 +5,7 @@ import time
 from typing import TYPE_CHECKING, Any, Mapping
 
 import jax
-import jax.numpy as jnp
+import numpy as np
 import wandb
 from flax.training import common_utils
 from jax import random
@@ -36,16 +36,17 @@ class PeriodicAction:
         self._dry_run = dry_run
         self._key = rng
 
-    def __call__(self, *, step: int,  **kwargs):
+    def __call__(self, *, step: int, **kwargs):
         self.always_run(step=step, **kwargs)
         if self._should_run(step):
             self.run(step=step, **kwargs)
             self._prev_time = time.time()
+            self._prev_step = step
 
-    def run(self, *, **kwargs):
+    def run(self, **kwargs):
         raise NotImplementedError()
 
-    def always_run(self, *, **kwargs):
+    def always_run(self, **kwargs):
         pass
 
     def _should_run(self, step: int):
@@ -67,13 +68,14 @@ class LogAction(PeriodicAction):
         super().__init__(interval, dry_run)
         self._cache = []
 
-    def always_run(self, *, metrics: Mapping[str, Any], **kwargs):
+    def always_run(self, metrics: Mapping[str, Any], **kwargs):
         self._cache.append(metrics)
 
     def run(self, step: int, meta: Mapping[str, Any], **kwargs):
         metrics = common_utils.get_metrics(self._cache)
-        metrics = jax.tree_util.tree_map(jnp.mean, metrics)
-        data = {"train/" + k: v for k, v in metrics.items() + meta.items()}
+        metrics = jax.tree_util.tree_map(lambda x: np.mean(x).item(), metrics)
+        data = {**metrics, **meta}
+        data = {"train/" + k: v for k, v in data.items()}
         if not self._dry_run:
             wandb.log(data=data, step=step)
         self._cache = []

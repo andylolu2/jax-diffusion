@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -96,7 +95,7 @@ class Trainer:
 
         metrics_list = []
         for i, inputs in enumerate(self._build_eval_input()):
-            m = self._eval_fn(self._state, inputs, rng_0, i)
+            m = self._eval_fn(self._state, inputs, rng_0, jax_utils.replicate(i))
             metrics_list.append(m)
         metrics = common_utils.get_metrics(metrics_list)
         metrics = jax.tree_util.tree_map(np.mean, metrics)
@@ -112,7 +111,9 @@ class Trainer:
         shape = (num,) + x.shape[1:]
 
         x_T = random.normal(rng, shape, dtype=x.dtype)
-        x_0 = self._diffuser.ddim_backward(self._state.ema_params, x_T, steps)
+
+        params = jax_utils.unreplicate(self._state.ema_params)
+        x_0 = self._diffuser.ddim_backward(params, x_T, steps)
         return x_0
 
     def save_checkpoint(self, ckpt_dir: str):
@@ -197,7 +198,6 @@ class Trainer:
 
     @partial(jax.pmap, static_broadcasted_argnums=(0,), axis_name="batch")
     def _update_fn(self, state: TrainState, inputs: Batch, rng: Rng):
-        logging.info(f"inputs: {jax.tree_util.tree_map(lambda x: x.shape, inputs)}")
         rng = random.fold_in(rng, state.step)
         rng1, rng2 = random.split(rng)
         grad_loss_fn = jax.grad(self._loss_fn, has_aux=True)
