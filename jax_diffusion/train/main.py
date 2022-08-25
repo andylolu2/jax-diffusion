@@ -1,3 +1,4 @@
+import jax
 import tensorflow as tf
 import wandb
 from absl import logging
@@ -61,9 +62,9 @@ def main(config: Config):
         with tqdm(total=config.steps, initial=trainer.global_step) as pbar:
             for step in range(trainer.global_step, config.steps):
                 step_rng, _step_rng = random.split(step_rng)
-                metrics = trainer.step(_step_rng)
+                metrics, meta = trainer.step()
 
                 for pa in periodic_actions:
-                    pa(step=step, metrics=metrics)
+                    pa(step=step, metrics=metrics, meta=meta)
 
                 pbar.update()

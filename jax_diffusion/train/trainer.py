@@ -11,14 +11,15 @@ import numpy as np
 import optax
 import wandb
 from absl import logging
+from flax import jax_utils
 from flax.core import FrozenDict
-from flax.training import checkpoints, train_state
+from flax.training import checkpoints, common_utils, train_state
 from jax import random
 
 from jax_diffusion.diffusion import Diffuser
 from jax_diffusion.model import UNet
 from jax_diffusion.train import dataset, lr_schedules, optimizers
-from jax_diffusion.types import Batch, Config, Params, Rng, ndarray
+from jax_diffusion.types import Batch, Config, Params, ReplicatedState, Rng, ndarray
 from jax_diffusion.utils.image import image_grid
 
 
@@ -38,7 +39,9 @@ class TrainState(train_state.TrainState):
 
 class Trainer:
     def __init__(self, rng: Rng, config: Config):
-        self._init_rng = rng
+        self.global_step = 0
+        self._init_rng, self._step_rng = random.split(rng)
+        self._step_rng = common_utils.shard_prng_key(self._step_rng)
         self._config = config
         self._diffuser = Diffuser(self._forward_fn, config.diffusion)
 
@@ -55,18 +58,12 @@ class Trainer:
 
         logging.info(f"Device count: {self._n_devices}")
         logging.info(f"Running on platform: {platform}")
-        logging.info(f"Using data type: {self._dtype}")
+        logging.info(f"Using data type: {self._dtype.dtype.name}")
 
-        # Initialized at self._initialize_train()
-        self._state: TrainState | None = None
+        # Initialized at first
+        self._state: ReplicatedState | None = None
         self._lr_schedule: optax.Schedule | None = None
         self._train_input: dataset.Dataset | None = None
-
-    @property
-    def global_step(self):
-        if self._state is None:
-            return 0
-        return int(self._state.step)
 
     @property
     def _sample_batch(self):
@@ -76,37 +73,35 @@ class Trainer:
             **self._config.dataset_kwargs,
         )
 
-    def step(self, rng: Rng):
+    def step(self):
         """Performs one training step"""
         if self._train_input is None:
             self._train_input = self._build_train_input()
         if self._state is None:
-            self._state = self._create_train_state()
+            self._state, self._lr_schedule = self._create_state()
+            self._state = jax_utils.replicate(self._state)
 
-        assert self._train_input is not None
-        assert self._state is not None
         inputs = next(self._train_input)
-        logging.info(f"inputs: {jax.tree_util.tree_map(lambda x: x.shape, inputs)}")
-        self._state, metrics = self._update_fn(self._state, inputs, rng)
-        logging.info(f"state: {jax.tree_util.tree_map(lambda x: x.shape, self._state)}")
-        logging.info(f"metrics: {jax.tree_util.tree_map(lambda x: x.shape, metrics)}")
+        self._state, metrics = self._update_fn(self._state, inputs, self._step_rng)
 
         meta = self._metadata()
-        metrics.update(meta)
 
-        return metrics
+        self.global_step += 1
+        return metrics, meta
 
     def evaluate(self, rng: Rng):
         """Performs evaluation on the evaluation dataset"""
-        metrics: Dict[str, Any] = defaultdict(int)
+        rng_0, rng_1 = random.split(rng)
+        rng_0 = common_utils.shard_prng_key(rng_0)
 
+        metrics_list = []
         for i, inputs in enumerate(self._build_eval_input()):
-            rng, _rng = random.split(rng)
-            m = self._eval_fn(self._state, inputs, _rng)
-            for k, v in m.items():
-                metrics[k] = metrics[k] * (i / (i + 1)) + v / (i + 1)
+            m = self._eval_fn(self._state, inputs, rng_0, i)
+            metrics_list.append(m)
+        metrics = common_utils.get_metrics(metrics_list)
+        metrics = jax.tree_util.tree_map(np.mean, metrics)
 
-        generated = self.sample(**self._config.eval.sample_kwargs, rng=rng)
+        generated = self.sample(**self._config.eval.sample_kwargs, rng=rng_1)
         image = image_grid(np.asarray(generated))
         metrics["sample"] = wandb.Image(image)
 
@@ -134,17 +129,17 @@ class Trainer:
         assert path.is_dir() or path.is_file()
 
         if self._state is None:
-            self._state = self._create_train_state()
+            self._state, self._lr_schedule = self._create_state()
 
         self._state = checkpoints.restore_checkpoint(ckpt_dir=path, target=self._state)
+        self._state = jax_utils.replicate(self._state)
         logging.info(f"Restored checkpoint from {path}")
 
-    def _create_train_state(self):
+    def _create_state(self):
         rng_diffusion, rng_param, rng_dropout = random.split(self._init_rng, 3)
 
         x_0 = self._sample_batch["image"]
         x_t, t, _ = self._diffuser.forward(x_0, rng_diffusion)
-        logging.info(f"x_t: {x_t.shape}")
         model = UNet(**self._config.model.unet_kwargs, dtype=self._dtype)
 
         init_rngs = {"params": rng_param, "dropout": rng_dropout}
@@ -153,15 +148,16 @@ class Trainer:
         count = sum(x.size for x in jax.tree_util.tree_leaves(params)) / 1e6
         logging.info(f"Parameter count: {count:.2f}M")
 
-        tx, self._lr_schedule = self._create_optimizer()
+        tx, lr_schedule = self._create_optimizer()
 
-        return TrainState.create(
+        state = TrainState.create(
             apply_fn=model.apply,
             params=params,
             ema_params=params,
             ema_step_size=self._config.train.ema_step_size,
             tx=tx,
         )
+        return state, lr_schedule
 
     def _forward_fn(
         self,
@@ -199,22 +195,25 @@ class Trainer:
         meta["learning_rate"] = self._lr_schedule(self.global_step)
         return meta
 
-    @partial(jax.pmap, static_broadcasted_argnums=(0,), in_axes=(None, None, 0, None))
+    @partial(jax.pmap, static_broadcasted_argnums=(0,), axis_name="batch")
     def _update_fn(self, state: TrainState, inputs: Batch, rng: Rng):
         logging.info(f"inputs: {jax.tree_util.tree_map(lambda x: x.shape, inputs)}")
+        rng = random.fold_in(rng, state.step)
         rng1, rng2 = random.split(rng)
         grad_loss_fn = jax.grad(self._loss_fn, has_aux=True)
 
         x_0 = inputs["image"]
         x_t, t, eps = self._diffuser.forward(x_0, rng1)
         grads, metrics = grad_loss_fn(state.params, x_t, t, eps, rng2)
+        grads = jax.lax.pmean(grads, axis_name="batch")
         state = state.apply_gradients(grads=grads)
-        logging.info(f"state: {jax.tree_util.tree_map(lambda x: x.shape, state)}")
+        metrics = jax.lax.pmean(metrics, axis_name="batch")
         logging.info(f"metrics: {jax.tree_util.tree_map(lambda x: x.shape, metrics)}")
         return state, metrics
 
-    @partial(jax.pmap, static_broadcasted_argnums=(0,))
-    def _eval_fn(self, state: TrainState, inputs: Batch, rng: Rng):
+    @partial(jax.pmap, static_broadcasted_argnums=(0,), axis_name="batch")
+    def _eval_fn(self, state: TrainState, inputs: Batch, rng: Rng, eval_step: int):
+        rng = random.fold_in(rng, eval_step)
         x_t, t, eps = self._diffuser.forward(inputs["image"], rng)
         pred = self._forward_fn(state.ema_params, x_t, t, train=False)
         metrics = self._compute_metrics(pred, eps)
