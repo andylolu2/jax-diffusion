@@ -1,3 +1,5 @@
+import jax
+import jax.tools.colab_tpu
 import tensorflow as tf
 import wandb
 from absl import logging
@@ -52,6 +54,8 @@ def setup(config: Config):
 
 def main(config: Config):
     config = FrozenConfigDict(config)  # needed to be hashable
+
+    jax.tools.colab_tpu.setup_tpu()
 
     logging.info(config)
 
