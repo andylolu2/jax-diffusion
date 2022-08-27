@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Mapping
 import jax
 import numpy as np
 import wandb
+from absl import logging
 from flax.training import common_utils
 from jax import random
 
@@ -76,6 +77,7 @@ class LogAction(PeriodicAction):
         metrics = jax.tree_util.tree_map(lambda x: np.mean(x).item(), metrics)
         data = {**metrics, **meta}
         data = {"train/" + k: v for k, v in data.items()}
+        logging.info(data)
         if not self._dry_run:
             wandb.log(data=data, step=step)
         self._cache = []

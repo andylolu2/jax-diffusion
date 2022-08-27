@@ -80,7 +80,9 @@ def load(
         ds = ds.repeat()
 
     preprocess = partial(preprocess_image, name, resize_dim, augment)
-    ds = ds.map(preprocess, AUTOTUNE if map_calls == "auto" else map_calls)
+    ds = ds.map(
+        preprocess, AUTOTUNE if map_calls == "auto" else map_calls, deterministic=True
+    )
 
     assert batch_size % n_devices == 0
     ds = ds.batch(batch_size // n_devices, drop_remainder=True)
@@ -134,6 +136,7 @@ if __name__ == "__main__":
         prefetch="auto",
         map_calls="auto",
         seed=0,
+        n_devices=1,
     )
 
     count = 0
