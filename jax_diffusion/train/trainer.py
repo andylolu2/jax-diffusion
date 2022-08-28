@@ -57,7 +57,7 @@ class Trainer:
 
         logging.info(f"Device count: {self._n_devices}")
         logging.info(f"Running on platform: {platform}")
-        logging.info(f"Using data type: {self._dtype.dtype.name}")
+        logging.info(f"Using data type: {self._dtype}")
 
         # Initialized at first
         self._state: ReplicatedState | None = None
