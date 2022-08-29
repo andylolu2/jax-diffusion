@@ -25,6 +25,6 @@ def get_config() -> Config:
     exp_conf.eval.sample_kwargs.num = 6
 
     exp_conf.model.unet_kwargs.dim_init = 128
-    exp_conf.model.unet_kwargs.dim_mults = (1, 1, 2, 4)
+    exp_conf.model.unet_kwargs.dim_mults = (1, 2, 2, 4)
 
     return config
