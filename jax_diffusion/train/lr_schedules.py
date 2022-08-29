@@ -4,10 +4,18 @@ import optax
 def create_lr_schedule(schedule_type: str, **kwargs):
     if schedule_type == "constant":
         return optax.constant_schedule(**kwargs)
+    elif schedule_type == "constant_warmup":
+        return _constant_with_warmup(**kwargs)
     elif schedule_type == "cosine":
         return _cosine_with_warmup(**kwargs)
     else:
         raise NotImplementedError(schedule_type)
+
+
+def _constant_with_warmup(value: float, warmup_steps: int):
+    warmup = optax.linear_schedule(0, value, warmup_steps)
+    constant = optax.constant_schedule(value=value)
+    return optax.join_schedules([warmup, constant], boundaries=[warmup_steps])
 
 
 def _cosine_with_warmup(
