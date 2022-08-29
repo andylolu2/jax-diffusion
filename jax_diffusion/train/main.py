@@ -1,6 +1,6 @@
 import jax.tools.colab_tpu
 
-jax.tools.colab_tpu.setup_tpu()
+jax.tools.colab_tpu.setup_tpu("tpu_driver0.1-dev20211030")
 
 import tensorflow as tf
 import wandb
