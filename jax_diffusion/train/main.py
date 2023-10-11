@@ -37,12 +37,12 @@ def setup(config: Config):
             interval=config.log_interval,
             dry_run=config.dry_run,
         ),
-        # CheckpointAction(
-        #     config.ckpt_interval,
-        #     config.dry_run,
-        #     trainer=trainer,
-        #     ckpt_dir=ckpt_dir,
-        # ),
+        CheckpointAction(
+            config.ckpt_interval,
+            config.dry_run,
+            trainer=trainer,
+            ckpt_dir=ckpt_dir,
+        ),
         EvalAction(
             interval=config.eval_interval,
             dry_run=config.dry_run,

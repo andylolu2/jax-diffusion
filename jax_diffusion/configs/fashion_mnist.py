@@ -6,8 +6,8 @@ def get_config() -> Config:
     config = get_base_config()
 
     config.effective_steps = 100000
-    config.ckpt_interval = 180
-    config.eval_interval = 180
+    config.ckpt_interval = 2000
+    config.eval_interval = 2000
 
     exp_conf = config.experiment_kwargs.config
 

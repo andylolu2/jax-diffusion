@@ -84,7 +84,8 @@ class Trainer:
         inputs = next(self._train_input)
         inputs = jax.device_put(inputs, self.sharding.reshape(self._n_devices, 1, 1, 1))
 
-        self._state, metrics = self._update_fn(self._state, inputs, self._step_rng)
+        self._step_rng, rng = random.split(self._step_rng)
+        self._state, metrics = self._update_fn(self._state, inputs, rng)
 
         meta = self._metadata()
 
@@ -96,11 +97,13 @@ class Trainer:
         rng_0, rng_1 = random.split(rng)
 
         metrics_list = []
-        for i, inputs in enumerate(self._build_eval_input()):
-            m = self._eval_fn(self._state, inputs, rng_0, i)
+        for inputs in self._build_eval_input():
+            rng_0_, rng_0 = random.split(rng_0)
+            m = self._eval_fn(self._state, inputs, rng_0_)
             metrics_list.append(m)
-        metrics = common_utils.get_metrics(metrics_list)
-        metrics = jax.tree_util.tree_map(np.mean, metrics)
+
+        metrics = common_utils.stack_forest(metrics_list)
+        metrics = jax.tree_util.tree_map(lambda x: jnp.mean(x).item(), metrics)
 
         generated = self.sample(**self._config.eval.sample_kwargs, rng=rng_1)
         image = image_grid(np.asarray(generated))
@@ -206,12 +209,10 @@ class Trainer:
         x_t, t, eps = self._diffuser.forward(x_0, rng1)
         grads, metrics = grad_loss_fn(state.params, x_t, t, eps, rng2)
         state = state.apply_gradients(grads=grads)
-        logging.info(f"metrics: {jax.tree_util.tree_map(lambda x: x.shape, metrics)}")
         return state, metrics
 
     @partial(jax.jit, static_argnums=0)
-    def _eval_fn(self, state: TrainState, inputs: Batch, rng: Rng, eval_step: int):
-        rng = random.fold_in(rng, eval_step)
+    def _eval_fn(self, state: TrainState, inputs: Batch, rng: Rng):
         x_t, t, eps = self._diffuser.forward(inputs["image"], rng)
         pred = self._forward_fn(state.ema_params, x_t, t, train=False)
         metrics = self._compute_metrics(pred, eps)

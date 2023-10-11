@@ -54,9 +54,9 @@ def load(
     prefetch: int | str,
     map_calls: int | str,
     batch_size: int,
-    # n_devices: int,
     repeat: bool = False,
     shuffle: bool = False,
+    try_gcs: bool = False,
     augment: bool = False,
     seed: int | None = None,
     buffer_size: int | None = None,
@@ -69,6 +69,7 @@ def load(
         split=f"{split}[:{subset}]",
         data_dir=data_dir,
         shuffle_files=True,
+        try_gcs=try_gcs,
     )
     assert isinstance(ds, tf.data.Dataset)
 
@@ -84,9 +85,7 @@ def load(
         preprocess, AUTOTUNE if map_calls == "auto" else map_calls, deterministic=True
     )
 
-    # assert batch_size % n_devices == 0
     ds = ds.batch(batch_size, drop_remainder=True)
-    # ds = ds.batch(n_devices, drop_remainder=True)
     ds = ds.prefetch(AUTOTUNE if prefetch == "auto" else prefetch)
 
     yield from tfds.as_numpy(ds)  # type: ignore
@@ -136,7 +135,6 @@ if __name__ == "__main__":
         prefetch="auto",
         map_calls="auto",
         seed=0,
-        n_devices=1,
     )
 
     count = 0
