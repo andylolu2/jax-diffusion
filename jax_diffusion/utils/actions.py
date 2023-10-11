@@ -5,6 +5,7 @@ import time
 from typing import TYPE_CHECKING, Any, Mapping
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import wandb
 from absl import logging
@@ -73,8 +74,8 @@ class LogAction(PeriodicAction):
         self._cache.append(metrics)
 
     def run(self, step: int, meta: Mapping[str, Any], **kwargs):
-        metrics = common_utils.get_metrics(self._cache)
-        metrics = jax.tree_util.tree_map(lambda x: np.mean(x).item(), metrics)
+        metrics = common_utils.stack_forest(self._cache)
+        metrics = jax.tree_util.tree_map(lambda x: jnp.mean(x).item(), metrics)
         data = {**metrics, **meta}
         data = {"train/" + k: v for k, v in data.items()}
         logging.info(data)
@@ -84,7 +85,7 @@ class LogAction(PeriodicAction):
 
 
 class EvalAction(PeriodicAction):
-    interval_type = IntervalType.Secs
+    interval_type = IntervalType.Steps
 
     def __init__(self, interval: float, dry_run: bool, rng: Rng, trainer: Trainer):
         super().__init__(interval, dry_run, rng)
@@ -98,7 +99,7 @@ class EvalAction(PeriodicAction):
 
 
 class CheckpointAction(PeriodicAction):
-    interval_type = IntervalType.Secs
+    interval_type = IntervalType.Steps
 
     def __init__(self, interval: float, dry_run: bool, trainer: Trainer, ckpt_dir: str):
         super().__init__(interval, dry_run)

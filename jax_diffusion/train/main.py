@@ -1,6 +1,6 @@
-import jax.tools.colab_tpu
+# import jax.tools.colab_tpu
 
-jax.tools.colab_tpu.setup_tpu("tpu_driver0.1-dev20211030")
+# jax.tools.colab_tpu.setup_tpu("tpu_driver0.1-dev20211030")
 
 import tensorflow as tf
 import wandb
@@ -37,12 +37,12 @@ def setup(config: Config):
             interval=config.log_interval,
             dry_run=config.dry_run,
         ),
-        CheckpointAction(
-            config.ckpt_interval,
-            config.dry_run,
-            trainer=trainer,
-            ckpt_dir=ckpt_dir,
-        ),
+        # CheckpointAction(
+        #     config.ckpt_interval,
+        #     config.dry_run,
+        #     trainer=trainer,
+        #     ckpt_dir=ckpt_dir,
+        # ),
         EvalAction(
             interval=config.eval_interval,
             dry_run=config.dry_run,

@@ -10,10 +10,10 @@ import numpy as np
 import optax
 import wandb
 from absl import logging
-from flax import jax_utils
 from flax.core import FrozenDict
 from flax.training import checkpoints, common_utils, train_state
 from jax import random
+from jax.sharding import PositionalSharding
 
 from jax_diffusion.diffusion import Diffuser
 from jax_diffusion.model import UNet
@@ -40,7 +40,6 @@ class Trainer:
     def __init__(self, rng: Rng, config: Config):
         self.global_step = 0
         self._init_rng, self._step_rng = random.split(rng)
-        self._step_rng = common_utils.shard_prng_key(self._step_rng)
         self._config = config
         self._diffuser = Diffuser(self._forward_fn, config.diffusion)
 
@@ -54,6 +53,8 @@ class Trainer:
                 self._dtype = jnp.float16
         else:
             self._dtype = jnp.float32
+
+        self.sharding = PositionalSharding(jax.devices())
 
         logging.info(f"Device count: {self._n_devices}")
         logging.info(f"Running on platform: {platform}")
@@ -78,9 +79,11 @@ class Trainer:
             self._train_input = self._build_train_input()
         if self._state is None:
             self._state, self._lr_schedule = self._create_state()
-            self._state = jax_utils.replicate(self._state)
+            self._state = jax.device_put(self._state, self.sharding.replicate())
 
         inputs = next(self._train_input)
+        inputs = jax.device_put(inputs, self.sharding.reshape(self._n_devices, 1, 1, 1))
+
         self._state, metrics = self._update_fn(self._state, inputs, self._step_rng)
 
         meta = self._metadata()
@@ -91,11 +94,10 @@ class Trainer:
     def evaluate(self, rng: Rng):
         """Performs evaluation on the evaluation dataset"""
         rng_0, rng_1 = random.split(rng)
-        rng_0 = common_utils.shard_prng_key(rng_0)
 
         metrics_list = []
         for i, inputs in enumerate(self._build_eval_input()):
-            m = self._eval_fn(self._state, inputs, rng_0, jax_utils.replicate(i))
+            m = self._eval_fn(self._state, inputs, rng_0, i)
             metrics_list.append(m)
         metrics = common_utils.get_metrics(metrics_list)
         metrics = jax.tree_util.tree_map(np.mean, metrics)
@@ -112,8 +114,7 @@ class Trainer:
 
         x_T = random.normal(rng, shape, dtype=x.dtype)
 
-        params = jax_utils.unreplicate(self._state.ema_params)
-        x_0 = self._diffuser.ddim_backward(params, x_T, steps)
+        x_0 = self._diffuser.ddim_backward(self._state.ema_params, x_T, steps)
         return x_0
 
     def save_checkpoint(self, ckpt_dir: str):
@@ -133,7 +134,7 @@ class Trainer:
             self._state, self._lr_schedule = self._create_state()
 
         self._state = checkpoints.restore_checkpoint(ckpt_dir=path, target=self._state)
-        self._state = jax_utils.replicate(self._state)
+        self._state = jax.device_put(self._state, self.sharding.replicate())
         logging.info(f"Restored checkpoint from {path}")
 
     def _create_state(self):
@@ -196,22 +197,19 @@ class Trainer:
         meta["learning_rate"] = self._lr_schedule(self.global_step)
         return meta
 
-    @partial(jax.pmap, static_broadcasted_argnums=(0,), axis_name="batch")
+    @partial(jax.jit, static_argnums=0)
     def _update_fn(self, state: TrainState, inputs: Batch, rng: Rng):
-        rng = random.fold_in(rng, state.step)
         rng1, rng2 = random.split(rng)
         grad_loss_fn = jax.grad(self._loss_fn, has_aux=True)
 
         x_0 = inputs["image"]
         x_t, t, eps = self._diffuser.forward(x_0, rng1)
         grads, metrics = grad_loss_fn(state.params, x_t, t, eps, rng2)
-        grads = jax.lax.pmean(grads, axis_name="batch")
         state = state.apply_gradients(grads=grads)
-        metrics = jax.lax.pmean(metrics, axis_name="batch")
         logging.info(f"metrics: {jax.tree_util.tree_map(lambda x: x.shape, metrics)}")
         return state, metrics
 
-    @partial(jax.pmap, static_broadcasted_argnums=(0,), axis_name="batch")
+    @partial(jax.jit, static_argnums=0)
     def _eval_fn(self, state: TrainState, inputs: Batch, rng: Rng, eval_step: int):
         rng = random.fold_in(rng, eval_step)
         x_t, t, eps = self._diffuser.forward(inputs["image"], rng)
@@ -238,7 +236,6 @@ class Trainer:
     def _build_train_input(self):
         return dataset.load(
             train=True,
-            n_devices=self._n_devices,
             **self._config.train.dataset_kwargs,
             **self._config.dataset_kwargs,
         )
@@ -246,7 +243,6 @@ class Trainer:
     def _build_eval_input(self):
         return dataset.load(
             train=False,
-            n_devices=self._n_devices,
             **self._config.eval.dataset_kwargs,
             **self._config.dataset_kwargs,
         )
