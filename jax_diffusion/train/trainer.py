@@ -7,6 +7,7 @@ from typing import Any, Dict
 
 import jax
 import jax.numpy as jnp
+import jmp
 import numpy as np
 import optax
 import wandb
@@ -42,6 +43,7 @@ class Trainer:
         self._config = config
         self._diffuser = Diffuser(self._forward_fn, config.diffusion)
         self._am = checkpoints.AsyncManager()
+        self._scaler = jmp.StaticLossScale(512)  # type: ignore
 
         # Initialized at self._initialize_train()
         self._state: TrainState | None = None
@@ -173,6 +175,7 @@ class Trainer:
         pred = self._forward_fn(params, image, t, train=True, rng=rng)
         loss = self._loss(pred, eps)
         metrics = self._compute_metrics(pred, eps)
+        loss = self._scaler.scale(loss)
         return loss, metrics
 
     def _metadata(self):
@@ -188,6 +191,7 @@ class Trainer:
         x_0 = inputs["image"]
         x_t, t, eps = self._diffuser.forward(x_0, rng1)
         grads, metrics = grad_loss_fn(state.params, x_t, t, eps, rng2)
+        grads = self._scaler.unscale(grads)
         state = state.apply_gradients(grads=grads)
         return state, metrics
 

@@ -21,5 +21,6 @@ def get_config() -> Config:
 
     exp_conf.model.unet_kwargs.dim_init = 48
     exp_conf.model.unet_kwargs.dim_mults = (1, 2, 2, 2)
+    exp_conf.model.unet_kwargs.dtype = "fp16"
 
     return config
