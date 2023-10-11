@@ -5,6 +5,7 @@ jupyter
 ml-collections
 numpy
 optax
+pillow
 tensorflow-cpu
 tensorflow-datasets
 tqdm
