@@ -4,7 +4,12 @@ import enum
 import time
 from typing import TYPE_CHECKING, Any, Mapping
 
+import jax
+import jax.numpy as jnp
+import numpy as np
 import wandb
+from absl import logging
+from flax.training import common_utils
 from jax import random
 
 from jax_diffusion.types import Rng
@@ -33,7 +38,8 @@ class PeriodicAction:
         self._dry_run = dry_run
         self._key = rng
 
-    def __call__(self, step: int, **kwargs):
+    def __call__(self, *, step: int, **kwargs):
+        self.always_run(step=step, **kwargs)
         if self._should_run(step):
             self.run(step=step, **kwargs)
             self._prev_time = time.time()
@@ -41,6 +47,9 @@ class PeriodicAction:
 
     def run(self, **kwargs):
         raise NotImplementedError()
+
+    def always_run(self, **kwargs):
+        pass
 
     def _should_run(self, step: int):
         if self.interval_type == IntervalType.Secs:
@@ -57,15 +66,26 @@ class PeriodicAction:
 class LogAction(PeriodicAction):
     interval_type = IntervalType.Steps
 
-    def run(self, step: int, metrics: Mapping[str, Any], **kwargs):
-        metrics = {"train/" + k: v for k, v in metrics.items()}
-        commit = time.time() - self._prev_time >= 1
+    def __init__(self, interval: float, dry_run: bool):
+        super().__init__(interval, dry_run)
+        self._cache = []
+
+    def always_run(self, metrics: Mapping[str, Any], **kwargs):
+        self._cache.append(metrics)
+
+    def run(self, step: int, meta: Mapping[str, Any], **kwargs):
+        metrics = common_utils.stack_forest(self._cache)
+        metrics = jax.tree_util.tree_map(lambda x: jnp.mean(x).item(), metrics)
+        data = {**metrics, **meta}
+        data = {"train/" + k: v for k, v in data.items()}
+        logging.info(data)
         if not self._dry_run:
-            wandb.log(data=metrics, step=step, commit=commit)
+            wandb.log(data=data, step=step)
+        self._cache = []
 
 
 class EvalAction(PeriodicAction):
-    interval_type = IntervalType.Secs
+    interval_type = IntervalType.Steps
 
     def __init__(self, interval: float, dry_run: bool, rng: Rng, trainer: Trainer):
         super().__init__(interval, dry_run, rng)
@@ -79,7 +99,7 @@ class EvalAction(PeriodicAction):
 
 
 class CheckpointAction(PeriodicAction):
-    interval_type = IntervalType.Secs
+    interval_type = IntervalType.Steps
 
     def __init__(self, interval: float, dry_run: bool, trainer: Trainer, ckpt_dir: str):
         super().__init__(interval, dry_run)

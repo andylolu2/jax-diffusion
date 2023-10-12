@@ -56,6 +56,7 @@ def load(
     batch_size: int,
     repeat: bool = False,
     shuffle: bool = False,
+    try_gcs: bool = False,
     augment: bool = False,
     seed: int | None = None,
     buffer_size: int | None = None,
@@ -68,6 +69,7 @@ def load(
         split=f"{split}[:{subset}]",
         data_dir=data_dir,
         shuffle_files=True,
+        try_gcs=try_gcs,
     )
     assert isinstance(ds, tf.data.Dataset)
 
@@ -79,7 +81,9 @@ def load(
         ds = ds.repeat()
 
     preprocess = partial(preprocess_image, name, resize_dim, augment)
-    ds = ds.map(preprocess, AUTOTUNE if map_calls == "auto" else map_calls)
+    ds = ds.map(
+        preprocess, AUTOTUNE if map_calls == "auto" else map_calls, deterministic=True
+    )
 
     ds = ds.batch(batch_size, drop_remainder=True)
     ds = ds.prefetch(AUTOTUNE if prefetch == "auto" else prefetch)

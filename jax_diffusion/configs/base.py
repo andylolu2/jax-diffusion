@@ -23,14 +23,15 @@ def get_config() -> Config:
     config.effective_steps = steps
     config.steps = steps * grad_acc
     config.ckpt_dir = "gs://jax-diffusion-checkpoints"
-    config.log_interval = 1
-    config.ckpt_interval = 60
-    config.eval_interval = 180
+    config.log_interval = 100
+    config.ckpt_interval = 5000
+    config.eval_interval = 1000
 
     config.experiment_kwargs = ConfigDict(
         dict(
             config=dict(
                 seed=seed,
+                half_precision=False,
                 dataset_kwargs=dict(
                     name="mnist",
                     resize_dim=32,
@@ -47,6 +48,7 @@ def get_config() -> Config:
                         shuffle=True,
                         repeat=True,
                         augment=True,
+                        try_gcs=False,
                     ),
                     ema_step_size=1 - 0.9995,
                     optimizer=dict(
@@ -88,7 +90,6 @@ def get_config() -> Config:
                         kernel_size=3,
                         num_groups=4,
                         dropout=0.1,
-                        dtype="fp32",
                     ),
                 ),
             )

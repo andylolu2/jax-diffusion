@@ -15,6 +15,7 @@ Rng = jax.random.KeyArray
 Params = optax.Params
 Config = Any
 Flags = FlagValues
+ReplicatedState = Any
 
 
 class Batch(TypedDict):

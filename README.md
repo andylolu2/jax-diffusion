@@ -32,12 +32,11 @@ Full hyperparameters can be found in
 | ![img][5] | ![img][6] |
 
 [5]: https://user-images.githubusercontent.com/66584117/185258572-a51e78aa-8296-471e-b5e7-4049f541134b.png
-[6]: https://user-images.githubusercontent.com/66584117/185258584-7c607a35-351c-4e78-b918-acae6c7ce10b.png
+[6]: https://github.com/andylolu2/jax-diffusion/assets/66584117/1e10294c-0be0-4c99-b53f-2480c9035ff4
 
 ### Training details
 
-Model has 9.70M parameters, trained on Kaggle (P100) for 90K steps with batch size 128
-in 9.5 hours.
+Model has 9.70M parameters, trained on Kaggle (TPUv3-8) for 40K steps with batch size 128 in 2.5 hours.
 
 Full hyperparameters can be found in 
 [configs/fashion_mnist.py](jax_diffusion/configs/fashion_mnist.py).

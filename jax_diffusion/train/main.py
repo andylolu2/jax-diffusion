@@ -1,3 +1,7 @@
+# import jax.tools.colab_tpu
+
+# jax.tools.colab_tpu.setup_tpu("tpu_driver0.1-dev20211030")
+
 import tensorflow as tf
 import wandb
 from absl import logging
@@ -19,10 +23,10 @@ def setup(config: Config):
     logging.set_verbosity(config.log_level)
 
     # setup rng
-    init_rng, eval_rng, step_rng = random.split(random.PRNGKey(config.seed), 3)
+    model_rng, eval_rng = random.split(random.PRNGKey(config.seed))
 
     # setup trainer
-    trainer = Trainer(init_rng, **config.experiment_kwargs)
+    trainer = Trainer(model_rng, **config.experiment_kwargs)
     if config.restore != "":
         trainer.restore_checkpoint(config.restore)
 
@@ -47,7 +51,7 @@ def setup(config: Config):
         ),
     ]
 
-    return trainer, step_rng, periodic_actions
+    return trainer, periodic_actions
 
 
 def main(config: Config):
@@ -57,13 +61,12 @@ def main(config: Config):
 
     # main loop
     with wandb_run(config):
-        trainer, step_rng, periodic_actions = setup(config)
+        trainer, periodic_actions = setup(config)
         with tqdm(total=config.steps, initial=trainer.global_step) as pbar:
             for step in range(trainer.global_step, config.steps):
-                step_rng, _step_rng = random.split(step_rng)
-                metrics = trainer.step(_step_rng)
+                metrics, meta = trainer.step()
 
                 for pa in periodic_actions:
-                    pa(step=step, metrics=metrics)
+                    pa(step=step, metrics=metrics, meta=meta)
 
                 pbar.update()
